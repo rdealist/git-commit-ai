@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://git-commit-ai.ai-metadata.schema.json",
+  "title": "AI Usage Metadata Schema",
+  "description": "Schema for AI usage tracking in git commits",
+  "type": "object",
+  "required": ["timestamp", "project", "aiUsed"],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the metadata was generated"
+    },
+    "project": {
+      "type": "string",
+      "description": "Project name (repository name)"
+    },
+    "gitRoot": {
+      "type": "string",
+      "description": "Absolute path to the git repository root"
+    },
+    "agents": {
+      "type": "array",
+      "description": "List of AI agents detected",
+      "items": {
+        "type": "string",
+        "enum": ["claude-code", "kimi-cli", "cursor", "aider", "copilot", "other"]
+      }
+    },
+    "aiUsed": {
+      "type": "boolean",
+      "description": "Whether AI was used in this commit"
+    },
+    "aiInvolvement": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Estimated AI involvement percentage (0-100)"
+    },
+    "changedFiles": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of files changed in this commit"
+    },
+    "sessionCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of AI sessions analyzed"
+    },
+    "promptSummary": {
+      "type": "string",
+      "description": "Summary of user prompts (truncated)"
+    },
+    "usageDepth": {
+      "type": "object",
+      "description": "Depth of AI usage analysis",
+      "properties": {
+        "skillUsage": {
+          "type": "boolean",
+          "description": "Whether AI skills were used"
+        },
+        "workflowPackaging": {
+          "type": "boolean",
+          "description": "Whether multi-step workflows were used"
+        },
+        "promptPackaging": {
+          "type": "boolean",
+          "description": "Whether structured prompts were used"
+        },
+        "contextEngineering": {
+          "type": "boolean",
+          "description": "Whether context engineering was used"
+        },
+        "skillNames": {
+          "type": "array",
+          "description": "List of skill names used",
+          "items": { "type": "string" }
+        },
+        "depthScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Aggregate depth score (0-4)"
+        }
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "description": "List of AI sessions",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Session ID"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Agent type"
+          },
+          "prompts": {
+            "type": "integer",
+            "description": "Number of prompts in session"
+          },
+          "tools": {
+            "type": "integer",
+            "description": "Number of tool calls in session"
+          },
+          "skills": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Skills used in session"
+          }
+        }
+      }
+    }
+  },
+  
+  "examples": [
+    {
+      "timestamp": "2024-01-15T10:30:00.000Z",
+      "project": "my-project",
+      "gitRoot": "/home/user/projects/my-project",
+      "agents": ["claude-code", "kimi-cli"],
+      "aiUsed": true,
+      "aiInvolvement": 75,
+      "changedFiles": 5,
+      "sessionCount": 2,
+      "promptSummary": "Create a git commit skill for tracking AI usage...",
+      "usageDepth": {
+        "skillUsage": true,
+        "workflowPackaging": true,
+        "promptPackaging": false,
+        "contextEngineering": true,
+        "skillNames": ["skill-creator", "vercel-react-best-practices"],
+        "depthScore": 3
+      },
+      "sessions": [
+        {
+          "id": "abc123",
+          "agent": "claude-code",
+          "prompts": 5,
+          "tools": 12,
+          "skills": ["skill-creator"]
+        }
+      ]
+    }
+  ]
+}
