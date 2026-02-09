@@ -145,13 +145,32 @@ AI-Info:
 
 | Agent | Support | Installation Path | Command |
 |-------|---------|-------------------|---------|
-| Claude Code | ✅ Full | `~/.config/agents/skills/` | `/skill:git-commit-ai` |
+| Claude Code | ✅ Full | `~/.claude/skills/` | `/skill:git-commit-ai` |
 | Kimi CLI | ✅ Full | `~/.config/agents/skills/` | `/skill:git-commit-ai` |
+| Codex CLI | ✅ Full | `~/.codex/skills/` | `/skill:git-commit-ai` |
+| Gemini CLI | ✅ Full | `~/.gemini/skills/` | `/skill:git-commit-ai` |
 | Cursor | ⚠️ CLI | `~/.cursor/skills/` | `node scripts/git-commit-ai.js` |
 | Aider | ⚠️ CLI | `~/.aider/skills/` | `node scripts/git-commit-ai.js` |
 
-**Full Support**: Session analysis + Tool tracking + Skill detection  
-**CLI Support**: Direct script execution only
+**Full Support**: Session analysis + Tool tracking + Skill detection + `/skill:` command  
+**CLI Support**: Direct script execution only (agent doesn't support `/skill:` commands)
+
+### 🚧 Adding More Agents
+
+We welcome contributions to add support for more AI agents! If you're using an agent not listed above:
+
+1. **Check if your agent supports skills/plugins**: Look for a `skills/`, `plugins/`, or similar directory
+2. **Install manually**: Clone this repo to that directory
+3. **Test and contribute**: If it works, please submit a PR to add an install script
+
+**Agents we're interested in supporting:**
+- GitHub Copilot CLI
+- Codeium
+- Tabnine
+- Continue.dev
+- Any other AI coding assistant!
+
+See [Contributing](#-contributing) section for details.
 
 ## 📊 Team Analytics
 
@@ -189,21 +208,27 @@ git commit -m "fix bug"  # → 🐛 fix: fix bug + AI-Info
 git-commit-ai/
 ├── SKILL.md                    # Skill documentation (loaded by agents)
 ├── scripts/
-│   ├── git-commit-ai.js       # Main script
-│   └── analyze-agent-sessions.js  # AI analysis
+│   ├── git-commit-ai.js       # Main script with Chinese support, [AI] tag, hash
+│   └── analyze-agent-sessions.js  # AI session analysis
 ├── assets/
 │   ├── commitlint.config.js   # Commitlint config
 │   ├── .gitmessage.template   # Git template
-│   └── ai-metadata.schema.json  # Schema
+│   └── ai-metadata.schema.json  # AI metadata JSON schema
 ├── install/
-│   ├── install.sh             # Universal installer
+│   ├── install.sh             # Universal installer (auto-detect agent)
 │   ├── install-for-claude.sh  # Claude Code installer
-│   ├── install-for-kimi.sh    # Kimi CLI installer
-│   └── install-for-cursor.sh  # Cursor installer
+│   ├── install-for-codex.sh   # OpenAI Codex installer
+│   ├── install-for-gemini.sh  # Google Gemini CLI installer
+│   ├── install-for-kimi.sh    # Moonshot Kimi CLI installer
+│   ├── install-for-cursor.sh  # Cursor installer
+│   └── lib/
+│       └── detect-agent.sh    # Agent detection library
 └── README.md                  # This file
 ```
 
-## 🛠️ Development
+## 🛠️ Development & Optimization
+
+### Quick Start
 
 ```bash
 # Clone for development
@@ -217,6 +242,38 @@ node scripts/git-commit-ai.js --dry-run
 # 1. Install to agent's skill directory
 # 2. Run /skill:git-commit-ai in the agent
 ```
+
+### 🔮 Roadmap & Optimization Ideas
+
+We encourage team members to contribute and optimize this skill. Here are some areas for improvement:
+
+#### 💡 Feature Enhancements
+- [ ] **Smart Scope Detection**: Auto-detect scope based on changed file paths
+- [ ] **Commit Message Templates**: Support custom templates for different project types
+- [ ] **Multi-language Support**: Add more languages for commit descriptions
+- [ ] **Web Dashboard**: Visual analytics dashboard for team AI usage
+- [ ] **VSCode Extension**: Native VSCode extension support
+- [ ] **IDE Plugins**: JetBrains, Vim, Emacs plugins
+
+#### 🔧 Technical Improvements
+- [ ] **Better Session Analysis**: Improve AI involvement calculation accuracy
+- [ ] **More Agent Adapters**: Add support for new AI agents as they emerge
+- [ ] **Commitlint Integration**: Built-in commit message linting
+- [ ] **CI/CD Integration**: GitHub Actions, GitLab CI support
+- [ ] **Custom Emoji Mapping**: Allow teams to define their own emoji conventions
+
+#### 📊 Analytics & Reporting
+- [ ] **Weekly Reports**: Auto-generate team AI usage reports
+- [ ] **Productivity Metrics**: Correlate AI usage with development velocity
+- [ ] **Skill Effectiveness**: Track which skills are most helpful
+- [ ] **Prompt Pattern Analysis**: Identify effective prompt patterns
+
+#### 🤝 Team Customization
+- [ ] **Team Config**: Per-team configuration files
+- [ ] **Custom Rules**: Define project-specific commit rules
+- [ ] **Integration APIs**: Webhook support for external tools
+
+**Have an idea?** Open an issue or submit a PR!
 
 ## 📝 Commit Types
 
@@ -235,10 +292,56 @@ node scripts/git-commit-ai.js --dry-run
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create your feature branch
-3. Commit using this skill: `/skill:git-commit-ai -t feat -m "add feature"`
-4. Push and create a Pull Request
+We welcome all contributions! Whether you're fixing a bug, adding a new agent, or improving documentation.
+
+### Quick Contribution Guide
+
+1. **Fork** the repository
+2. **Clone** your fork locally
+3. **Create a branch**: `git checkout -b feat/add-awesome-feature`
+4. **Make changes** and test locally
+5. **Commit** using this skill: `/skill:git-commit-ai -t feat -m "add awesome feature"`
+6. **Push** and create a Pull Request
+
+### Adding Support for a New Agent
+
+Want to add support for your favorite AI agent? Here's how:
+
+1. **Create install script**: `install/install-for-{agent}.sh`
+   - Follow the pattern in existing install scripts
+   - Handle both global (`~/.{agent}/skills/`) and project-level (`./.{agent}/skills/`) installation
+   - Support the `--project` flag for project-level installs
+
+2. **Update detection library**: `install/lib/detect-agent.sh`
+   - Add agent detection logic
+   - Define the installation directory
+
+3. **Update main installer**: `install/install.sh`
+   - Add agent to the detection list
+   - Define install directory logic
+
+4. **Test your changes**:
+   ```bash
+   ./install/install-for-{agent}.sh
+   # Verify skill is installed correctly
+   ls ~/.{agent}/skills/git-commit-ai/
+   ```
+
+5. **Update README**: Add the new agent to the supported agents table
+
+6. **Submit PR**: Include test results and usage instructions
+
+### Code Style
+
+- Follow existing code patterns
+- Add comments for complex logic
+- Update documentation for new features
+- Test on macOS and Linux (Windows WSL appreciated)
+
+### Need Help?
+
+- Open an [Issue](https://github.com/rdealist/git-commit-ai/issues) for bugs or feature requests
+- Start a [Discussion](https://github.com/rdealist/git-commit-ai/discussions) for questions
 
 ## 📄 License
 
