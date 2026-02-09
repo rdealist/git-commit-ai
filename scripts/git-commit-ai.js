@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync, spawn } = require('child_process');
+const crypto = require('crypto');
 const { analyzeAIUsage } = require('./analyze-agent-sessions');
 
 // Emoji mapping for commit types (GitMoji + Angular hybrid)
@@ -37,6 +38,23 @@ const TYPE_EMOJI = {
   'revert': '⏪',    // Reverts
   'wip': '🚧',       // Work in progress
   'ai': '🤖',        // AI-assisted changes
+};
+
+// Chinese descriptions for commit types
+const TYPE_CHINESE = {
+  'feat': '新功能',
+  'fix': '修复',
+  'docs': '文档',
+  'style': '格式',
+  'refactor': '重构',
+  'perf': '性能',
+  'test': '测试',
+  'chore': '构建',
+  'ci': 'CI/CD',
+  'build': '构建',
+  'revert': '回退',
+  'wip': '进行中',
+  'ai': 'AI辅助',
 };
 
 // AI usage level descriptions
@@ -183,6 +201,20 @@ function inferScope(files) {
 }
 
 /**
+ * Generate hash from prompt for anti-fraud
+ */
+function generatePromptHash(prompt) {
+  if (!prompt || prompt.length < 5) return '';
+  
+  // Use first 100 chars of prompt to generate hash
+  const data = prompt.substring(0, 100).trim();
+  const hash = crypto.createHash('sha256').update(data).digest('hex');
+  
+  // Return first 12 chars of hash (readable but unique enough)
+  return hash.substring(0, 12);
+}
+
+/**
  * Generate AI metadata footer
  */
 function generateAIMetadata(aiData, options = {}) {
@@ -199,6 +231,14 @@ function generateAIMetadata(aiData, options = {}) {
   lines.push(`  Sessions: ${aiData.sessionCount}`);
   lines.push(`  Involvement: ${aiData.aiInvolvement}%`);
   lines.push(`  Depth: ${level.label} ${level.emoji}`);
+  
+  // Anti-fraud hash from prompt
+  if (aiData.promptSummary && aiData.promptSummary.length > 10) {
+    const hash = generatePromptHash(aiData.promptSummary);
+    if (hash) {
+      lines.push(`  Hash: ${hash}`);
+    }
+  }
   
   // Features used
   if (aiData.usageDepth) {
@@ -240,17 +280,23 @@ function generateCommitMessage(options, aiData, gitInfo) {
   } = options;
   
   const emoji = TYPE_EMOJI[type] || '';
+  const typeChinese = TYPE_CHINESE[type] || type;
   const scopeStr = scope ? `(${scope})` : '';
   const breakingMarker = breaking ? '!' : '';
   
-  // Header line
-  let header = `${emoji} ${type}${scopeStr}${breakingMarker}: ${message}`;
+  // Check if AI was used
+  const aiUsed = aiData?.aiUsed && includeAI;
+  const aiTag = aiUsed ? '[AI] ' : '';
   
-  // Body
+  // Header line with AI tag and Chinese description
+  // Format: ✨ [AI] feat(scope): 新功能 - message
+  let header = `${emoji} ${aiTag}${type}${scopeStr}${breakingMarker}: ${typeChinese} - ${message}`;
+  
+  // Body (include original English body if provided)
   let fullBody = body;
   
   // Add AI metadata if enabled
-  if (includeAI && aiData?.aiUsed) {
+  if (aiUsed) {
     const aiFooter = generateAIMetadata(aiData);
     if (aiFooter) {
       fullBody = fullBody ? `${fullBody}\n\n${aiFooter}` : aiFooter;
@@ -446,17 +492,23 @@ function hookMode(commitMsgFile) {
   const files = getChangedFilesInfo();
   const type = inferCommitType(files);
   const emoji = TYPE_EMOJI[type] || '';
+  const typeChinese = TYPE_CHINESE[type] || type;
   
-  // Prepend emoji if not present
-  let newMsg = originalMsg;
-  if (!originalMsg.match(/^[\p{Emoji}]/u)) {
-    newMsg = `${emoji} ${originalMsg}`;
+  // Build new header with [AI] tag and Chinese description
+  // Extract original message (remove leading emoji if present)
+  let originalText = originalMsg.trim();
+  if (originalText.match(/^[\p{Emoji}]\s*/u)) {
+    originalText = originalText.replace(/^[\p{Emoji}]\s*/, '');
   }
+  
+  // Format: ✨ [AI] feat: 新功能 - original message
+  const newHeader = `${emoji} [AI] ${type}: ${typeChinese} - ${originalText}`;
   
   // Add AI metadata footer
   const aiFooter = generateAIMetadata(aiData);
+  let newMsg = newHeader;
   if (aiFooter) {
-    newMsg = `${newMsg}\n\n${aiFooter}`;
+    newMsg = `${newHeader}\n\n${aiFooter}`;
   }
   
   fs.writeFileSync(commitMsgFile, newMsg);
