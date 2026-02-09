@@ -29,16 +29,29 @@ fi
 # Clone repository
 echo "📥 Downloading skill..."
 if command -v git &> /dev/null; then
-    git clone --depth 1 "$REPO_URL" "$INSTALL_DIR/$SKILL_NAME" 2>/dev/null
+    if git clone --depth 1 "$REPO_URL" "$INSTALL_DIR/$SKILL_NAME" 2>/dev/null; then
+        echo "✓ Cloned successfully"
+    else
+        echo "✗ Failed to clone repository"
+        exit 1
+    fi
 else
     TEMP_DIR=$(mktemp -d)
-    curl -fsSL "$REPO_URL/archive/refs/heads/main.tar.gz" | tar -xz -C "$TEMP_DIR" --strip-components=1
-    mv "$TEMP_DIR" "$INSTALL_DIR/$SKILL_NAME"
+    echo "Downloading via curl..."
+    if curl -fsSL "$REPO_URL/archive/refs/heads/main.tar.gz" -o "$TEMP_DIR/skill.tar.gz" 2>/dev/null; then
+        mkdir -p "$INSTALL_DIR/$SKILL_NAME"
+        tar -xzf "$TEMP_DIR/skill.tar.gz" -C "$INSTALL_DIR/$SKILL_NAME" --strip-components=1
+        rm -rf "$TEMP_DIR"
+    else
+        echo "✗ Failed to download"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
 fi
 
 # Clean up
-rm -rf "$INSTALL_DIR/$SKILL_NAME/.git"
-rm -rf "$INSTALL_DIR/$SKILL_NAME/install"
+rm -rf "$INSTALL_DIR/$SKILL_NAME/.git" 2>/dev/null || true
+rm -rf "$INSTALL_DIR/$SKILL_NAME/install" 2>/dev/null || true
 
 echo ""
 echo "✅ Installation complete!"

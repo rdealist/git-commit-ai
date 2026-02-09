@@ -20,7 +20,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN[✓]${NC} $1"; }
+log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[✗]${NC} $1"; }
 
@@ -101,17 +101,37 @@ install_skill() {
     
     # Download
     local temp_dir=$(mktemp -d)
+    local source_dir=""
+    
     if command -v git &> /dev/null; then
-        git clone --depth 1 "$REPO_URL" "$temp_dir/$SKILL_NAME" 2>/dev/null
+        log_info "Cloning repository..."
+        if git clone --depth 1 "$REPO_URL" "$temp_dir/$SKILL_NAME" 2>/dev/null; then
+            source_dir="$temp_dir/$SKILL_NAME"
+        else
+            log_error "Failed to clone repository"
+            rm -rf "$temp_dir"
+            return 1
+        fi
     else
-        curl -fsSL "$REPO_URL/archive/refs/heads/main.tar.gz" | tar -xz -C "$temp_dir" --strip-components=1
-        mv "$temp_dir" "$temp_dir/$SKILL_NAME"
+        log_info "Downloading archive..."
+        local tarball="$temp_dir/git-commit-ai.tar.gz"
+        if curl -fsSL "$REPO_URL/archive/refs/heads/main.tar.gz" -o "$tarball" 2>/dev/null; then
+            tar -xzf "$tarball" -C "$temp_dir" --strip-components=1
+            source_dir="$temp_dir"
+        else
+            log_error "Failed to download"
+            rm -rf "$temp_dir"
+            return 1
+        fi
     fi
     
     # Move to target
-    rm -rf "$temp_dir/$SKILL_NAME/.git"
-    rm -rf "$temp_dir/$SKILL_NAME/install"
-    mv "$temp_dir/$SKILL_NAME" "$install_dir/"
+    log_info "Installing files..."
+    rm -rf "$source_dir/.git" 2>/dev/null || true
+    rm -rf "$source_dir/install" 2>/dev/null || true
+    
+    # Copy instead of move to avoid issues
+    cp -r "$source_dir" "$install_dir/$SKILL_NAME"
     rm -rf "$temp_dir"
     
     log_success "Installed for $agent"
@@ -146,6 +166,13 @@ print_usage() {
         aider)
             echo "📖 Usage in Aider:"
             echo "   node $install_dir/$SKILL_NAME/scripts/git-commit-ai.js"
+            ;;
+        standalone|*)
+            echo "📖 Standalone Usage:"
+            echo "   node $install_dir/$SKILL_NAME/scripts/git-commit-ai.js"
+            echo ""
+            echo "   Or add to your PATH:"
+            echo "   export PATH=\"$install_dir/$SKILL_NAME/scripts:\$PATH\""
             ;;
     esac
     
