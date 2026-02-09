@@ -33,18 +33,17 @@ detect_agent_install_dir() {
             fi
             ;;
         gemini|gemini-cli)
-            if [[ "$project_mode" == "true" ]] && [[ -d ".gemini" ]]; then
+            if [[ "$project_mode" == "true" ]]; then
                 echo ".gemini/skills"
-            elif [[ -d "$HOME/.gemini" ]]; then
-                if [[ -d "$HOME/.gemini/skills" ]]; then
-                    echo "$HOME/.gemini/skills"
-                else
-                    echo "$HOME/.gemini"
+            elif [[ -L "$HOME/.gemini/skills" ]]; then
+                # Handle symlink (e.g., ~/.gemini/skills -> ~/.shared-skills)
+                SYMLINK_TARGET=$(readlink "$HOME/.gemini/skills" 2>/dev/null || echo "")
+                if [[ -n "$SYMLINK_TARGET" ]] && [[ ! -d "$SYMLINK_TARGET" ]]; then
+                    mkdir -p "$SYMLINK_TARGET" 2>/dev/null || true
                 fi
-            elif [[ -d "$HOME/.config/gemini" ]]; then
-                echo "$HOME/.config/gemini/skills"
+                echo "$HOME/.gemini/skills"
             else
-                echo "$HOME/.config/gemini/skills"
+                echo "$HOME/.gemini/skills"
             fi
             ;;
         kimi|kimi-cli)

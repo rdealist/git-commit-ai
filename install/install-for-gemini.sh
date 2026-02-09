@@ -28,23 +28,20 @@ done
 
 # Detect install directory
 if [[ "$PROJECT_MODE" == "true" ]]; then
-    if [[ -d ".gemini" ]]; then
-        INSTALL_DIR=".gemini/skills"
-    else
-        echo "⚠️  No .gemini directory found in project."
-        echo "   Creating .gemini/skills for project-level installation."
-        INSTALL_DIR=".gemini/skills"
-    fi
+    INSTALL_DIR=".gemini/skills"
 else
     # Global installation
-    if [[ -d "$HOME/.gemini" ]]; then
-        if [[ -d "$HOME/.gemini/skills" ]]; then
-            INSTALL_DIR="$HOME/.gemini/skills"
-        else
-            INSTALL_DIR="$HOME/.gemini"
+    # Gemini CLI uses ~/.gemini/skills (which may be a symlink to ~/.shared-skills)
+    if [[ -L "$HOME/.gemini/skills" ]]; then
+        # It's a symlink, use the symlink path (it will resolve correctly)
+        INSTALL_DIR="$HOME/.gemini/skills"
+        # Create the target directory if it doesn't exist
+        SYMLINK_TARGET=$(readlink "$HOME/.gemini/skills" 2>/dev/null || echo "")
+        if [[ -n "$SYMLINK_TARGET" ]] && [[ ! -d "$SYMLINK_TARGET" ]]; then
+            mkdir -p "$SYMLINK_TARGET"
         fi
-    elif [[ -d "$HOME/.config/gemini" ]]; then
-        INSTALL_DIR="$HOME/.config/gemini/skills"
+    elif [[ -d "$HOME/.gemini" ]]; then
+        INSTALL_DIR="$HOME/.gemini/skills"
     else
         INSTALL_DIR="$HOME/.gemini/skills"
     fi
