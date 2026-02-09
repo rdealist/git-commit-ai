@@ -11,18 +11,10 @@ detect_agent_install_dir() {
     
     case $agent in
         claude-code|claude)
-            if [[ "$project_mode" == "true" ]] && [[ -d ".claude" ]]; then
+            if [[ "$project_mode" == "true" ]]; then
                 echo ".claude/skills"
-            elif [[ -d "$HOME/.claude" ]]; then
-                if [[ -d "$HOME/.claude/skills" ]]; then
-                    echo "$HOME/.claude/skills"
-                else
-                    echo "$HOME/.config/agents/skills"
-                fi
-            elif [[ -d "$HOME/.config/claude" ]]; then
-                echo "$HOME/.config/claude/skills"
             else
-                echo "$HOME/.config/agents/skills"
+                echo "$HOME/.claude/skills"
             fi
             ;;
         codex)

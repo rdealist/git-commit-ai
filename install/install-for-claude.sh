@@ -28,22 +28,10 @@ done
 
 # Detect install directory
 if [[ "$PROJECT_MODE" == "true" ]]; then
-    if [[ -d ".claude" ]]; then
-        INSTALL_DIR=".claude/skills"
-    else
-        echo "⚠️  No .claude directory found in project."
-        echo "   Creating .claude/skills for project-level installation."
-        INSTALL_DIR=".claude/skills"
-    fi
+    INSTALL_DIR=".claude/skills"
 else
     # Global installation
-    if [[ -d "$HOME/.claude/agents/skills" ]]; then
-        INSTALL_DIR="$HOME/.claude/agents/skills"
-    elif [[ -d "$HOME/.config/agents/skills" ]]; then
-        INSTALL_DIR="$HOME/.config/agents/skills"
-    else
-        INSTALL_DIR="$HOME/.config/agents/skills"
-    fi
+    INSTALL_DIR="$HOME/.claude/skills"
 fi
 
 echo "🔧 Installing git-commit-ai skill for Claude Code..."
