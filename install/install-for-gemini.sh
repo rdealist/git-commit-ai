@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# Install git-commit-ai skill for Cursor
+# Install git-commit-ai skill for Google Gemini CLI
 #
 # Usage:
-#   bash install-for-cursor.sh              # Auto-detect location
-#   bash install-for-cursor.sh --project    # Install to current project
+#   bash install-for-gemini.sh              # Auto-detect location
+#   bash install-for-gemini.sh --project    # Install to current project
 #
 
 set -e
@@ -28,25 +28,29 @@ done
 
 # Detect install directory
 if [[ "$PROJECT_MODE" == "true" ]]; then
-    if [[ -d ".cursor" ]]; then
-        INSTALL_DIR=".cursor/skills"
+    if [[ -d ".gemini" ]]; then
+        INSTALL_DIR=".gemini/skills"
     else
-        echo "⚠️  No .cursor directory found in project."
-        echo "   Creating .cursor/skills for project-level installation."
-        INSTALL_DIR=".cursor/skills"
+        echo "⚠️  No .gemini directory found in project."
+        echo "   Creating .gemini/skills for project-level installation."
+        INSTALL_DIR=".gemini/skills"
     fi
 else
     # Global installation
-    if [[ -d "$HOME/.cursor" ]]; then
-        INSTALL_DIR="$HOME/.cursor/skills"
-    elif [[ -d "$HOME/Library/Application Support/Cursor" ]]; then
-        INSTALL_DIR="$HOME/Library/Application Support/Cursor/skills"
+    if [[ -d "$HOME/.gemini" ]]; then
+        if [[ -d "$HOME/.gemini/skills" ]]; then
+            INSTALL_DIR="$HOME/.gemini/skills"
+        else
+            INSTALL_DIR="$HOME/.gemini"
+        fi
+    elif [[ -d "$HOME/.config/gemini" ]]; then
+        INSTALL_DIR="$HOME/.config/gemini/skills"
     else
-        INSTALL_DIR="$HOME/.cursor/skills"
+        INSTALL_DIR="$HOME/.gemini/skills"
     fi
 fi
 
-echo "🔧 Installing git-commit-ai skill for Cursor..."
+echo "🔧 Installing git-commit-ai skill for Gemini CLI..."
 echo "   Mode: $([ "$PROJECT_MODE" == "true" ] && echo "Project-level" || echo "Global")"
 echo "   Target: $INSTALL_DIR/$SKILL_NAME"
 echo "   Source: $REPO_URL"
@@ -103,10 +107,9 @@ else
 fi
 
 echo ""
-echo "🚀 Usage in Cursor:"
-echo "   node $INSTALL_DIR/$SKILL_NAME/scripts/git-commit-ai.js"
+echo "🚀 Usage in Gemini CLI:"
+echo "   /skill:git-commit-ai"
 echo ""
-echo "📖 Note: Cursor doesn't support /skill: commands natively."
-echo "   You can add an alias to your shell:"
-echo "   alias gca='node $INSTALL_DIR/$SKILL_NAME/scripts/git-commit-ai.js'"
+echo "📖 Or use directly:"
+echo "   node $INSTALL_DIR/$SKILL_NAME/scripts/git-commit-ai.js"
 echo ""

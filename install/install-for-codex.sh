@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# Install git-commit-ai skill for Cursor
+# Install git-commit-ai skill for OpenAI Codex CLI
 #
 # Usage:
-#   bash install-for-cursor.sh              # Auto-detect location
-#   bash install-for-cursor.sh --project    # Install to current project
+#   bash install-for-codex.sh              # Auto-detect location
+#   bash install-for-codex.sh --project    # Install to current project
 #
 
 set -e
@@ -28,25 +28,30 @@ done
 
 # Detect install directory
 if [[ "$PROJECT_MODE" == "true" ]]; then
-    if [[ -d ".cursor" ]]; then
-        INSTALL_DIR=".cursor/skills"
+    if [[ -d ".codex" ]]; then
+        INSTALL_DIR=".codex/skills"
     else
-        echo "⚠️  No .cursor directory found in project."
-        echo "   Creating .cursor/skills for project-level installation."
-        INSTALL_DIR=".cursor/skills"
+        echo "⚠️  No .codex directory found in project."
+        echo "   Creating .codex/skills for project-level installation."
+        INSTALL_DIR=".codex/skills"
     fi
 else
-    # Global installation
-    if [[ -d "$HOME/.cursor" ]]; then
-        INSTALL_DIR="$HOME/.cursor/skills"
-    elif [[ -d "$HOME/Library/Application Support/Cursor" ]]; then
-        INSTALL_DIR="$HOME/Library/Application Support/Cursor/skills"
+    # Global installation - check various possible locations
+    if [[ -d "$HOME/.codex" ]]; then
+        if [[ -d "$HOME/.codex/skills" ]]; then
+            INSTALL_DIR="$HOME/.codex/skills"
+        else
+            INSTALL_DIR="$HOME/.codex"
+        fi
+    elif [[ -d "$HOME/.config/codex" ]]; then
+        INSTALL_DIR="$HOME/.config/codex/skills"
     else
-        INSTALL_DIR="$HOME/.cursor/skills"
+        # Default location
+        INSTALL_DIR="$HOME/.codex/skills"
     fi
 fi
 
-echo "🔧 Installing git-commit-ai skill for Cursor..."
+echo "🔧 Installing git-commit-ai skill for Codex CLI..."
 echo "   Mode: $([ "$PROJECT_MODE" == "true" ] && echo "Project-level" || echo "Global")"
 echo "   Target: $INSTALL_DIR/$SKILL_NAME"
 echo "   Source: $REPO_URL"
@@ -103,10 +108,9 @@ else
 fi
 
 echo ""
-echo "🚀 Usage in Cursor:"
-echo "   node $INSTALL_DIR/$SKILL_NAME/scripts/git-commit-ai.js"
+echo "🚀 Usage in Codex CLI:"
+echo "   /skill:git-commit-ai"
 echo ""
-echo "📖 Note: Cursor doesn't support /skill: commands natively."
-echo "   You can add an alias to your shell:"
-echo "   alias gca='node $INSTALL_DIR/$SKILL_NAME/scripts/git-commit-ai.js'"
+echo "📖 Or use directly:"
+echo "   node $INSTALL_DIR/$SKILL_NAME/scripts/git-commit-ai.js"
 echo ""

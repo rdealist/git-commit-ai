@@ -2,17 +2,52 @@
 #
 # Install git-commit-ai skill for Kimi CLI
 #
-# Usage: bash install-for-kimi.sh
-#        REPO_URL=https://github.com/rdealist/git-commit-ai bash install-for-kimi.sh
+# Usage:
+#   bash install-for-kimi.sh              # Auto-detect location
+#   bash install-for-kimi.sh --project    # Install to current project
 #
 
 set -e
 
 SKILL_NAME="git-commit-ai"
-INSTALL_DIR="${HOME}/.config/agents/skills"
 REPO_URL="${REPO_URL:-https://github.com/rdealist/git-commit-ai}"
+PROJECT_MODE=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --project)
+            PROJECT_MODE=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# Detect install directory
+if [[ "$PROJECT_MODE" == "true" ]]; then
+    if [[ -d ".kimi" ]]; then
+        INSTALL_DIR=".kimi/skills"
+    else
+        echo "⚠️  No .kimi directory found in project."
+        echo "   Creating .kimi/skills for project-level installation."
+        INSTALL_DIR=".kimi/skills"
+    fi
+else
+    # Global installation
+    if [[ -d "$HOME/.config/agents/skills" ]]; then
+        INSTALL_DIR="$HOME/.config/agents/skills"
+    elif [[ -d "$HOME/.kimi" ]]; then
+        INSTALL_DIR="$HOME/.kimi/skills"
+    else
+        INSTALL_DIR="$HOME/.config/agents/skills"
+    fi
+fi
 
 echo "🔧 Installing git-commit-ai skill for Kimi CLI..."
+echo "   Mode: $([ "$PROJECT_MODE" == "true" ] && echo "Project-level" || echo "Global")"
 echo "   Target: $INSTALL_DIR/$SKILL_NAME"
 echo "   Source: $REPO_URL"
 echo ""
@@ -30,20 +65,22 @@ fi
 echo "📥 Downloading skill..."
 if command -v git &> /dev/null; then
     if git clone --depth 1 "$REPO_URL" "$INSTALL_DIR/$SKILL_NAME" 2>/dev/null; then
-        echo "✓ Cloned successfully"
+        echo "✅ Cloned successfully"
     else
-        echo "✗ Failed to clone repository"
+        echo "❌ Failed to clone repository"
         exit 1
     fi
 else
+    # Fallback to curl
     TEMP_DIR=$(mktemp -d)
     echo "Downloading via curl..."
     if curl -fsSL "$REPO_URL/archive/refs/heads/main.tar.gz" -o "$TEMP_DIR/skill.tar.gz" 2>/dev/null; then
         mkdir -p "$INSTALL_DIR/$SKILL_NAME"
         tar -xzf "$TEMP_DIR/skill.tar.gz" -C "$INSTALL_DIR/$SKILL_NAME" --strip-components=1
         rm -rf "$TEMP_DIR"
+        echo "✅ Downloaded successfully"
     else
-        echo "✗ Failed to download"
+        echo "❌ Failed to download"
         rm -rf "$TEMP_DIR"
         exit 1
     fi
@@ -55,6 +92,16 @@ rm -rf "$INSTALL_DIR/$SKILL_NAME/install" 2>/dev/null || true
 
 echo ""
 echo "✅ Installation complete!"
+echo ""
+
+if [[ "$PROJECT_MODE" == "true" ]]; then
+    echo "📁 Project-level installation"
+    echo "   This skill is available only in this project."
+else
+    echo "🏠 Global installation"
+    echo "   This skill is available across all projects."
+fi
+
 echo ""
 echo "🚀 Usage in Kimi CLI:"
 echo "   /skill:git-commit-ai"

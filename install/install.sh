@@ -6,11 +6,21 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.sh | bash
 #
+# Options:
+#   --project          Install to current project (./.claude/skills, ./.kimi/skills, etc.)
+#   --global           Install to user home (default)
+#   --agent <name>     Force specific agent (claude-code, codex, gemini-cli, kimi-cli, cursor, aider)
+#
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_NAME="git-commit-ai"
 REPO_URL="${REPO_URL:-https://github.com/rdealist/git-commit-ai}"
+
+# Default mode
+PROJECT_MODE=false
+FORCE_AGENT=""
 
 # Colors
 RED='\033[0;31m'
@@ -41,52 +51,209 @@ EOF
     echo -e "${NC}"
 }
 
-# Detect installed AI agents
-detect_agents() {
+# Parse arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --project)
+                PROJECT_MODE=true
+                shift
+                ;;
+            --global)
+                PROJECT_MODE=false
+                shift
+                ;;
+            --agent)
+                FORCE_AGENT="$2"
+                shift 2
+                ;;
+            --help)
+                show_help
+                exit 0
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+}
+
+show_help() {
+    cat << 'EOF'
+Git Commit AI - Universal Installer
+
+Usage: install.sh [OPTIONS]
+
+Options:
+  --project          Install to current project (./.claude/skills, etc.)
+  --global           Install to user home directory (default)
+  --agent <name>     Force specific agent (claude-code, codex, gemini-cli, kimi-cli, cursor, aider)
+  --help             Show this help message
+
+Examples:
+  # Auto-detect and install globally
+  ./install.sh
+
+  # Install to current project
+  ./install.sh --project
+
+  # Install for specific agent
+  ./install.sh --agent claude-code
+  ./install.sh --agent codex
+  ./install.sh --agent gemini-cli --project
+
+EOF
+}
+
+# Detect agent installation directory
+detect_agent_install_dir() {
+    local agent=$1
+    local project_mode=${2:-false}
+    
+    case $agent in
+        claude-code|claude)
+            if [[ "$project_mode" == "true" ]] && [[ -d ".claude" ]]; then
+                echo ".claude/skills"
+            elif [[ "$project_mode" == "true" ]]; then
+                echo ".claude/skills"
+            elif [[ -d "$HOME/.claude" ]]; then
+                if [[ -d "$HOME/.claude/agents/skills" ]]; then
+                    echo "$HOME/.claude/agents/skills"
+                else
+                    echo "$HOME/.config/agents/skills"
+                fi
+            elif [[ -d "$HOME/.config/claude" ]]; then
+                echo "$HOME/.config/claude/skills"
+            else
+                echo "$HOME/.config/agents/skills"
+            fi
+            ;;
+        codex)
+            if [[ "$project_mode" == "true" ]] && [[ -d ".codex" ]]; then
+                echo ".codex/skills"
+            elif [[ "$project_mode" == "true" ]]; then
+                echo ".codex/skills"
+            elif [[ -d "$HOME/.codex" ]]; then
+                if [[ -d "$HOME/.codex/skills" ]]; then
+                    echo "$HOME/.codex/skills"
+                else
+                    echo "$HOME/.codex"
+                fi
+            elif [[ -d "$HOME/.config/codex" ]]; then
+                echo "$HOME/.config/codex/skills"
+            else
+                echo "$HOME/.config/codex/skills"
+            fi
+            ;;
+        gemini|gemini-cli)
+            if [[ "$project_mode" == "true" ]] && [[ -d ".gemini" ]]; then
+                echo ".gemini/skills"
+            elif [[ "$project_mode" == "true" ]]; then
+                echo ".gemini/skills"
+            elif [[ -d "$HOME/.gemini" ]]; then
+                if [[ -d "$HOME/.gemini/skills" ]]; then
+                    echo "$HOME/.gemini/skills"
+                else
+                    echo "$HOME/.gemini"
+                fi
+            elif [[ -d "$HOME/.config/gemini" ]]; then
+                echo "$HOME/.config/gemini/skills"
+            else
+                echo "$HOME/.config/gemini/skills"
+            fi
+            ;;
+        kimi|kimi-cli)
+            if [[ "$project_mode" == "true" ]] && [[ -d ".kimi" ]]; then
+                echo ".kimi/skills"
+            elif [[ "$project_mode" == "true" ]]; then
+                echo ".kimi/skills"
+            elif [[ -d "$HOME/.kimi" ]]; then
+                if [[ -d "$HOME/.config/agents/skills" ]]; then
+                    echo "$HOME/.config/agents/skills"
+                else
+                    echo "$HOME/.kimi/skills"
+                fi
+            else
+                echo "$HOME/.config/agents/skills"
+            fi
+            ;;
+        cursor)
+            if [[ "$project_mode" == "true" ]] && [[ -d ".cursor" ]]; then
+                echo ".cursor/skills"
+            elif [[ "$project_mode" == "true" ]]; then
+                echo ".cursor/skills"
+            elif [[ -d "$HOME/.cursor" ]]; then
+                echo "$HOME/.cursor/skills"
+            else
+                echo "$HOME/.cursor/skills"
+            fi
+            ;;
+        aider)
+            if [[ "$project_mode" == "true" ]] && [[ -d ".aider" ]]; then
+                echo ".aider/skills"
+            elif [[ "$project_mode" == "true" ]]; then
+                echo ".aider/skills"
+            elif [[ -d "$HOME/.aider" ]]; then
+                echo "$HOME/.aider/skills"
+            else
+                echo "$HOME/.aider/skills"
+            fi
+            ;;
+        *)
+            if [[ "$project_mode" == "true" ]]; then
+                echo ".ai-skills"
+            else
+                echo "$HOME/.local/share/git-commit-ai"
+            fi
+            ;;
+    esac
+}
+
+# Detect all installed agents
+detect_installed_agents() {
     local agents=()
     
-    if [ -d "$HOME/.claude" ] || command -v claude &> /dev/null; then
-        agents+=("claude")
+    if [[ -d "$HOME/.claude" ]] || [[ -d "$HOME/.config/claude" ]] || command -v claude &> /dev/null; then
+        agents+=("claude-code")
     fi
     
-    if [ -d "$HOME/.kimi" ] || command -v kimi &> /dev/null; then
-        agents+=("kimi")
+    if [[ -d "$HOME/.codex" ]] || [[ -d "$HOME/.config/codex" ]] || command -v codex &> /dev/null; then
+        agents+=("codex")
     fi
     
-    if [ -d "$HOME/.cursor" ] || [ -d "$HOME/Library/Application Support/Cursor" ]; then
+    if [[ -d "$HOME/.gemini" ]] || [[ -d "$HOME/.config/gemini" ]] || command -v gemini &> /dev/null; then
+        agents+=("gemini-cli")
+    fi
+    
+    if [[ -d "$HOME/.kimi" ]] || [[ -d "$HOME/.config/kimi" ]] || command -v kimi &> /dev/null; then
+        agents+=("kimi-cli")
+    fi
+    
+    if [[ -d "$HOME/.cursor" ]] || [[ -d "$HOME/Library/Application Support/Cursor" ]]; then
         agents+=("cursor")
     fi
     
-    if [ -d "$HOME/.aider" ] || command -v aider &> /dev/null; then
+    if [[ -d "$HOME/.aider" ]] || command -v aider &> /dev/null; then
         agents+=("aider")
     fi
     
     echo "${agents[@]}"
 }
 
-# Get install directory for agent
-get_install_dir() {
-    local agent=$1
-    case $agent in
-        claude|kimi)
-            echo "$HOME/.config/agents/skills"
-            ;;
-        cursor)
-            echo "$HOME/.cursor/skills"
-            ;;
-        aider)
-            echo "$HOME/.aider/skills"
-            ;;
-        *)
-            echo "$HOME/.local/share/git-commit-ai"
-            ;;
-    esac
+# Check if current directory is a git repository
+is_git_repo() {
+    git rev-parse --git-dir &> /dev/null
+}
+
+# Get project root
+get_project_root() {
+    git rev-parse --show-toplevel 2>/dev/null || echo ""
 }
 
 # Install skill
 install_skill() {
     local agent=$1
-    local install_dir=$(get_install_dir "$agent")
+    local install_dir=$(detect_agent_install_dir "$agent" "$PROJECT_MODE")
     
     log_info "Installing for $agent..."
     log_info "Target: $install_dir/$SKILL_NAME"
@@ -96,6 +263,7 @@ install_skill() {
     
     # Remove old installation
     if [ -d "$install_dir/$SKILL_NAME" ]; then
+        log_info "Removing old installation..."
         rm -rf "$install_dir/$SKILL_NAME"
     fi
     
@@ -125,12 +293,11 @@ install_skill() {
         fi
     fi
     
-    # Move to target
+    # Install
     log_info "Installing files..."
     rm -rf "$source_dir/.git" 2>/dev/null || true
     rm -rf "$source_dir/install" 2>/dev/null || true
     
-    # Copy instead of move to avoid issues
     cp -r "$source_dir" "$install_dir/$SKILL_NAME"
     rm -rf "$temp_dir"
     
@@ -140,7 +307,7 @@ install_skill() {
 # Print usage instructions
 print_usage() {
     local agent=$1
-    local install_dir=$(get_install_dir "$agent")
+    local install_dir=$(detect_agent_install_dir "$agent" "$PROJECT_MODE")
     
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
@@ -148,31 +315,50 @@ print_usage() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     
+    if [[ "$PROJECT_MODE" == "true" ]]; then
+        echo "📁 Project-level installation"
+        echo "   Location: $install_dir/$SKILL_NAME"
+        echo ""
+        echo "🚀 This skill is available only in this project."
+    else
+        echo "🏠 Global installation"
+        echo "   Location: $install_dir/$SKILL_NAME"
+        echo ""
+        echo "🚀 This skill is available across all projects."
+    fi
+    
+    echo ""
+    
     case $agent in
-        claude)
-            echo "🚀 Usage in Claude Code:"
+        claude-code)
+            echo "Usage in Claude Code:"
             echo "   /skill:git-commit-ai"
             ;;
-        kimi)
-            echo "🚀 Usage in Kimi CLI:"
+        codex)
+            echo "Usage in Codex:"
+            echo "   /skill:git-commit-ai"
+            ;;
+        gemini-cli)
+            echo "Usage in Gemini CLI:"
+            echo "   /skill:git-commit-ai"
+            ;;
+        kimi-cli)
+            echo "Usage in Kimi CLI:"
             echo "   /skill:git-commit-ai"
             ;;
         cursor)
-            echo "📖 Usage in Cursor:"
+            echo "Usage in Cursor:"
             echo "   node $install_dir/$SKILL_NAME/scripts/git-commit-ai.js"
             echo ""
             echo "   (Cursor doesn't support /skill: natively)"
             ;;
         aider)
-            echo "📖 Usage in Aider:"
+            echo "Usage in Aider:"
             echo "   node $install_dir/$SKILL_NAME/scripts/git-commit-ai.js"
             ;;
-        standalone|*)
-            echo "📖 Standalone Usage:"
+        *)
+            echo "Usage:"
             echo "   node $install_dir/$SKILL_NAME/scripts/git-commit-ai.js"
-            echo ""
-            echo "   Or add to your PATH:"
-            echo "   export PATH=\"$install_dir/$SKILL_NAME/scripts:\$PATH\""
             ;;
     esac
     
@@ -180,14 +366,41 @@ print_usage() {
     echo "📚 Documentation:"
     echo "   $install_dir/$SKILL_NAME/SKILL.md"
     echo ""
+    
+    if [[ "$PROJECT_MODE" == "true" ]]; then
+        echo "💡 To make this skill available globally, run:"
+        echo "   $(basename "$0") --global"
+    fi
+    
+    echo ""
 }
 
 # Main
 main() {
+    parse_args "$@"
     print_banner
     
-    log_info "Detecting AI agents..."
-    local agents=($(detect_agents))
+    # Check project mode requirements
+    if [[ "$PROJECT_MODE" == "true" ]]; then
+        if ! is_git_repo; then
+            log_error "Project mode requires being in a git repository."
+            log_info "Either run in a git repo or use --global"
+            exit 1
+        fi
+        
+        log_info "Project mode enabled"
+        log_info "Project root: $(get_project_root)"
+    fi
+    
+    # Detect or use forced agent
+    local agents=()
+    if [[ -n "$FORCE_AGENT" ]]; then
+        agents+=("$FORCE_AGENT")
+        log_info "Using forced agent: $FORCE_AGENT"
+    else
+        log_info "Detecting AI agents..."
+        agents=($(detect_installed_agents))
+    fi
     
     if [ ${#agents[@]} -eq 0 ]; then
         log_warn "No AI agents detected."
@@ -208,4 +421,4 @@ main() {
     print_usage "${agents[0]}"
 }
 
-main
+main "$@"
