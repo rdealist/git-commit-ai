@@ -28,30 +28,68 @@ function runGit(args, options = {}) {
   }
 }
 
+function getHomeDir() {
+  if (process.env.HOME) return process.env.HOME;
+  if (process.env.USERPROFILE) return process.env.USERPROFILE;
+
+  const homeDrive = process.env.HOMEDRIVE || '';
+  const homePath = process.env.HOMEPATH || '';
+  const combined = `${homeDrive}${homePath}`;
+  return combined || '';
+}
+
+const HOME_DIR = getHomeDir();
+
+function normalizePathForCompare(input = '') {
+  return input
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+function isProjectPathMatch(candidatePath = '', projectPath = '') {
+  const candidate = normalizePathForCompare(candidatePath);
+  const project = normalizePathForCompare(projectPath);
+
+  if (!candidate || !project) {
+    return false;
+  }
+
+  return candidate === project ||
+    candidate.startsWith(`${project}/`) ||
+    project.startsWith(`${candidate}/`);
+}
+
 // Agent configuration with data locations and parsers
 const AGENT_CONFIG = {
   'claude-code': {
     name: 'Claude Code',
     detectDirs: ['.claude'],
-    globalDir: `${process.env.HOME}/.claude`,
+    globalDir: HOME_DIR ? path.join(HOME_DIR, '.claude') : '',
     sessionParser: 'parseClaudeSessions',
+  },
+  'codex': {
+    name: 'Codex CLI',
+    detectDirs: ['.codex'],
+    globalDir: HOME_DIR ? path.join(HOME_DIR, '.codex') : '',
+    sessionParser: 'parseCodexSessions',
   },
   'kimi-cli': {
     name: 'Kimi CLI',
     detectDirs: ['.kimi'],
-    globalDir: `${process.env.HOME}/.kimi`,
+    globalDir: HOME_DIR ? path.join(HOME_DIR, '.kimi') : '',
     sessionParser: 'parseKimiSessions',
   },
   'cursor': {
     name: 'Cursor',
     detectDirs: ['.cursor'],
-    globalDir: `${process.env.HOME}/.cursor`,
+    globalDir: HOME_DIR ? path.join(HOME_DIR, '.cursor') : '',
     sessionParser: 'parseCursorSessions',
   },
   'aider': {
     name: 'Aider',
     detectDirs: ['.aider'],
-    globalDir: `${process.env.HOME}/.aider`,
+    globalDir: HOME_DIR ? path.join(HOME_DIR, '.aider') : '',
     sessionParser: 'parseAiderSessions',
   },
 };
@@ -96,20 +134,22 @@ function getChangedFiles(cwd = process.cwd()) {
  */
 function parseClaudeSessions(projectPath, sinceTimestamp = 0) {
   const sessions = [];
-  const projectName = projectPath.replace(/\//g, '-');
-  const projectsDir = `${process.env.HOME}/.claude/projects/${projectName}`;
+  const normalizedProjectPath = projectPath.replace(/\\/g, '/');
+  const projectName = normalizedProjectPath.replace(/\//g, '-');
+  const claudeProjectsRoot = path.join(HOME_DIR, '.claude', 'projects');
+  const projectsDir = path.join(claudeProjectsRoot, projectName);
   
   if (!fs.existsSync(projectsDir)) {
     // Try alternative path encoding
-    const altPath = projectPath.replace(/^-/, '').replace(/-$/, '');
-    const altProjectsDir = `${process.env.HOME}/.claude/projects/-${altPath}`;
+    const altPath = normalizedProjectPath.replace(/^-/, '').replace(/-$/, '');
+    const altProjectsDir = path.join(claudeProjectsRoot, `-${altPath}`);
     if (!fs.existsSync(altProjectsDir)) {
       return sessions;
     }
   }
   
   const actualProjectsDir = fs.existsSync(projectsDir) ? projectsDir : 
-    `${process.env.HOME}/.claude/projects/-${projectPath.replace(/^-/, '').replace(/-$/, '')}`;
+    path.join(claudeProjectsRoot, `-${normalizedProjectPath.replace(/^-/, '').replace(/-$/, '')}`);
   
   if (!fs.existsSync(actualProjectsDir)) {
     return sessions;
@@ -219,7 +259,7 @@ function parseClaudeSessions(projectPath, sinceTimestamp = 0) {
  */
 function parseKimiSessions(projectPath, sinceTimestamp = 0) {
   const sessions = [];
-  const kimiJsonPath = `${process.env.HOME}/.kimi/kimi.json`;
+  const kimiJsonPath = path.join(HOME_DIR, '.kimi', 'kimi.json');
   
   if (!fs.existsSync(kimiJsonPath)) {
     return sessions;
@@ -236,7 +276,7 @@ function parseKimiSessions(projectPath, sinceTimestamp = 0) {
     }
     
     // Find session hash from user-history
-    const userHistoryDir = `${process.env.HOME}/.kimi/user-history`;
+    const userHistoryDir = path.join(HOME_DIR, '.kimi', 'user-history');
     if (!fs.existsSync(userHistoryDir)) {
       return sessions;
     }
@@ -293,6 +333,172 @@ function parseKimiSessions(projectPath, sinceTimestamp = 0) {
     // Error reading config
   }
   
+  return sessions;
+}
+
+/**
+ * Recursively list all JSONL files
+ */
+function listJsonlFiles(dir) {
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+
+  const result = [];
+  const stack = [dir];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+      if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        result.push(fullPath);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parse Codex CLI sessions for a project
+ */
+function parseCodexSessions(projectPath, sinceTimestamp = 0) {
+  const sessions = [];
+  const sessionsDir = path.join(HOME_DIR, '.codex', 'sessions');
+
+  if (!fs.existsSync(sessionsDir)) {
+    return sessions;
+  }
+
+  const files = listJsonlFiles(sessionsDir);
+
+  for (const filePath of files) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n').filter(l => l.trim());
+
+      const sessionData = {
+        id: path.basename(filePath, '.jsonl'),
+        messages: [],
+        tools: [],
+        skills: [],
+        prompts: [],
+        timestamp: null,
+        hasWorkflow: false,
+        hasPromptEngineering: false,
+        hasContextEngineering: false,
+      };
+
+      let sessionProject = '';
+
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          const entryTime = new Date(entry.timestamp).getTime();
+
+          if (entry.type === 'session_meta') {
+            sessionProject = entry.payload?.cwd || '';
+          }
+
+          if (sinceTimestamp && Number.isFinite(entryTime) && entryTime < sinceTimestamp) {
+            continue;
+          }
+
+          if (Number.isFinite(entryTime) && (!sessionData.timestamp || entryTime < sessionData.timestamp)) {
+            sessionData.timestamp = entryTime;
+          }
+
+          if (entry.type !== 'response_item') {
+            continue;
+          }
+
+          const payload = entry.payload || {};
+
+          if (payload.type === 'message' && payload.role === 'user') {
+            const textParts = Array.isArray(payload.content)
+              ? payload.content
+                  .filter(part => part?.type === 'input_text' && typeof part.text === 'string')
+                  .map(part => part.text)
+              : [];
+            const userText = textParts.join('\n').trim();
+
+            if (userText.length > 10) {
+              sessionData.prompts.push({
+                timestamp: entry.timestamp,
+                content: userText.substring(0, 500),
+              });
+
+              const skillMatch = userText.match(/\/skill[:\s]+(\S+)/);
+              if (skillMatch) {
+                sessionData.skills.push(skillMatch[1]);
+              }
+
+              if (userText.includes('Context:') ||
+                  userText.includes('You are') ||
+                  userText.includes('步骤') ||
+                  userText.includes('请按')) {
+                sessionData.hasPromptEngineering = true;
+              }
+            }
+          }
+
+          if (payload.type === 'function_call') {
+            let args = {};
+            if (typeof payload.arguments === 'string' && payload.arguments.trim()) {
+              try {
+                args = JSON.parse(payload.arguments);
+              } catch {
+                args = {};
+              }
+            }
+
+            sessionData.tools.push({
+              name: payload.name,
+              timestamp: entry.timestamp,
+              input: args,
+            });
+
+            const toolName = payload.name || '';
+            if (toolName.includes('skill') || toolName === 'update_plan') {
+              sessionData.hasWorkflow = true;
+            }
+
+            if (
+              toolName.includes('read') ||
+              toolName.includes('find') ||
+              toolName.includes('search') ||
+              toolName.includes('glob') ||
+              toolName.includes('open') ||
+              toolName.includes('exec_command')
+            ) {
+              sessionData.hasContextEngineering = true;
+            }
+          }
+        } catch {
+          // Skip malformed line
+        }
+      }
+
+      if (!isProjectPathMatch(sessionProject, projectPath)) {
+        continue;
+      }
+
+      if (sessionData.prompts.length > 0 || sessionData.tools.length > 0) {
+        sessionData.skills = [...new Set(sessionData.skills)];
+        sessions.push(sessionData);
+      }
+    } catch {
+      // Skip unreadable file
+    }
+  }
+
   return sessions;
 }
 
@@ -450,7 +656,7 @@ function analyzeAIUsage(projectPath = process.cwd()) {
   const detectedAgents = [];
   
   for (const [agentId, config] of Object.entries(AGENT_CONFIG)) {
-    const globalExists = fs.existsSync(config.globalDir);
+    const globalExists = Boolean(config.globalDir) && fs.existsSync(config.globalDir);
     const localExists = config.detectDirs.some(dir => 
       fs.existsSync(path.join(gitRoot, dir))
     );
@@ -463,18 +669,22 @@ function analyzeAIUsage(projectPath = process.cwd()) {
   // Parse sessions from all detected agents
   const allSessions = [];
   
+  const parserMap = {
+    parseClaudeSessions,
+    parseCodexSessions,
+    parseKimiSessions,
+  };
+
   for (const agentId of detectedAgents) {
     const config = AGENT_CONFIG[agentId];
-    const parser = config.sessionParser;
-    
-    if (parser === 'parseClaudeSessions') {
-      const sessions = parseClaudeSessions(gitRoot, lastCommitTime);
-      allSessions.push(...sessions.map(s => ({ ...s, agent: agentId })));
-    } else if (parser === 'parseKimiSessions') {
-      const sessions = parseKimiSessions(gitRoot, lastCommitTime);
-      allSessions.push(...sessions.map(s => ({ ...s, agent: agentId })));
+    const parserFn = parserMap[config.sessionParser];
+
+    if (!parserFn) {
+      continue;
     }
-    // Add other parsers as needed
+
+    const sessions = parserFn(gitRoot, lastCommitTime);
+    allSessions.push(...sessions.map(s => ({ ...s, agent: agentId })));
   }
   
   // Calculate metrics
@@ -515,6 +725,7 @@ if (require.main === module) {
 module.exports = {
   analyzeAIUsage,
   parseClaudeSessions,
+  parseCodexSessions,
   parseKimiSessions,
   calculateAIInvolvement,
   generatePromptSummaries,

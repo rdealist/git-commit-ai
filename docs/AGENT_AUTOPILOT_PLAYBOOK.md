@@ -61,10 +61,17 @@ fi
 ### 步骤 A：安装或更新 skill
 
 ```bash
-curl -fsSL "${REPO_RAW_BASE}/install/install.sh" | bash -s -- --global --agent "${AGENT_NAME}"
+if command -v bash >/dev/null 2>&1; then
+  curl -fsSL "${REPO_RAW_BASE}/install/install.sh" | bash -s -- --global --agent "${AGENT_NAME}"
+elif command -v powershell >/dev/null 2>&1; then
+  powershell -ExecutionPolicy Bypass -Command "iwr -useb ${REPO_RAW_BASE}/install/install.ps1 | iex"
+else
+  echo "[ERROR] 未找到 bash/powershell，无法自动安装 skill" >&2
+  exit 1
+fi
 ```
 
-> 如果网络受限：请使用本地镜像仓库路径执行 `install/install.sh`。
+> 如果网络受限：请使用本地镜像仓库路径执行 `install/install.sh` 或 `install/install.ps1`。
 
 ### 步骤 B：定位 skill 脚本入口
 
@@ -81,6 +88,9 @@ find_skill_script() {
     "$HOME/.kimi/skills/git-commit-ai/scripts/git-commit-ai.js"
     "$HOME/.cursor/skills/git-commit-ai/scripts/git-commit-ai.js"
     "$HOME/.aider/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$USERPROFILE/.codex/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$USERPROFILE/.claude/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$USERPROFILE/.gemini/skills/git-commit-ai/scripts/git-commit-ai.js"
   )
 
   local p

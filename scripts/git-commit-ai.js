@@ -482,6 +482,12 @@ function installManagedHook(hookPath, hookContent) {
   fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
 }
 
+function toHookScriptPath(filePath) {
+  return path.resolve(filePath)
+    .replace(/\\/g, '/')
+    .replace(/"/g, '\\"');
+}
+
 function installHook(options = {}) {
   const gitInfo = getGitInfo();
   if (!gitInfo) {
@@ -494,7 +500,7 @@ function installHook(options = {}) {
 
   const prepareHookPath = path.join(hooksDir, 'prepare-commit-msg');
   const commitMsgHookPath = path.join(hooksDir, 'commit-msg');
-  const entryScript = path.join(__dirname, 'git-commit-ai.js');
+  const entryScript = toHookScriptPath(path.join(__dirname, 'git-commit-ai.js'));
 
   const prepareHookContent = `#!/bin/sh
 # AI Commit Metadata Hook
@@ -510,7 +516,8 @@ fi
 
 # Only modify for regular commits (not merge, squash, etc.)
 if [ -z "$COMMIT_SOURCE" ]; then
-  node "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
+  NODE_BIN="\${NODE_BIN:-node}"
+  "$NODE_BIN" "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
 fi
 `;
 
@@ -526,8 +533,9 @@ if [ -x "$LEGACY_HOOK" ]; then
 fi
 
 # Try to enrich first, then validate
-node "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
-node "${entryScript}" --validate-hook-mode "$COMMIT_MSG_FILE"
+NODE_BIN="\${NODE_BIN:-node}"
+"$NODE_BIN" "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
+"$NODE_BIN" "${entryScript}" --validate-hook-mode "$COMMIT_MSG_FILE"
 `;
 
   installManagedHook(prepareHookPath, prepareHookContent);
