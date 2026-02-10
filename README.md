@@ -252,6 +252,19 @@ git log --all --format="%H|%an|%ai|%s" --grep="AI-Info:" > ai-commits.csv
 
 该文档提供了可执行变量、命令模板、兼容策略与失败处理流程。
 
+### 可直接复制给 Agent 的指令
+
+```text
+你是仓库自动化助手。请在当前仓库根目录完全自主完成 git-commit-ai 落地：
+1) 严格按 docs/AGENT_AUTOPILOT_PLAYBOOK.md 执行完整流程；
+2) 自动安装或更新 skill（优先全局安装）；
+3) 安装并配置本地 hooks 门禁（prepare-commit-msg + commit-msg，AI_POLICY=auto）；
+4) 若已存在 hooks，必须备份为 .legacy 并串联执行，禁止直接覆盖导致丢失；
+5) 完成验收检查并输出：skill 安装路径、hooks 路径、commitai.aiInfoPolicy 值、验证命令与结果；
+6) 禁止使用 --no-verify 绕过门禁。
+若任一步骤失败，按文档的失败处理策略自动修复并重试，直到完成。
+```
+
 ## 🔧 Git Hook 集成（本地门禁）
 
 在仓库中安装后，会同时启用两个本地 hook：
