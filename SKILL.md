@@ -46,13 +46,17 @@ Help me commit these changes
 /skill:git-commit-ai --dry-run -t feat -m "test commit"
 ```
 
-### Install Git Hook
+### Install Local Hook Gate
 
 ```
+# Default policy: auto
 /skill:git-commit-ai --install-hook
+
+# Force AI metadata on every commit
+/skill:git-commit-ai --install-hook --ai-policy always
 ```
 
-After installation, all `git commit` commands in this repository will automatically include AI metadata.
+After installation, this repository uses local hooks for both auto-enrichment and commit gate validation.
 
 ## How It Works
 
@@ -106,7 +110,8 @@ AI-Info:
 -b, --body <body>       Extended description (optional)
 -B, --breaking <desc>   Breaking change description (optional)
 --dry-run               Preview commit without committing
---install-hook          Install git hook in current repository
+--install-hook          Install local hooks (prepare-commit-msg + commit-msg)
+--ai-policy <policy>    Hook AI policy: auto|always|never
 --no-ai                 Skip AI metadata detection
 --help                  Show help
 ```
@@ -127,9 +132,15 @@ AI-Info:
 - Git repository
 - For AI detection: Claude Code, Kimi CLI, or other supported agents
 
+## Agent Rollout
+
+For agent-driven repository transformation (skill install + local hook gate + commit/push workflow), see:
+
+- `docs/AGENT_AUTOPILOT_PLAYBOOK.md`
+
 ## Notes
 
 - AI metadata is only included when AI sessions are detected in the current timeframe
 - The skill automatically detects which AI agents are installed
-- Git hook installation is per-repository
+- Hook installation is per-repository and includes local commit gate checks
 - All analysis is local - no data is sent to external servers

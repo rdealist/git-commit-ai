@@ -14,12 +14,13 @@
  *   --ai-metadata     Include AI usage metadata (default: auto-detect)
  *   --no-ai           Force disable AI metadata
  *   --dry-run         Preview commit message without committing
- *   --install-hook    Install as git prepare-commit-msg hook
+ *   --install-hook    Install local commit hooks (prepare-commit-msg + commit-msg)
+ *   --ai-policy       AI metadata policy for hook gate: auto|always|never
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
+const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const { analyzeAIUsage } = require('./analyze-agent-sessions');
 
@@ -66,16 +67,81 @@ const AI_LEVELS = {
   4: { label: 'Full', emoji: '🤖', desc: 'Extensive AI collaboration' },
 };
 
+const VALID_TYPES = new Set(Object.keys(TYPE_EMOJI));
+const VALID_AI_POLICIES = new Set(['auto', 'always', 'never']);
+const COMMIT_HEADER_REGEX =
+  /^(?:[\p{Emoji}\u200D\uFE0F]+\s*)?(?:\[AI\]\s*)?(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert|wip|ai)(?:\([a-z0-9._/-]+\))?!?: .+/u;
+
+function runGit(args, options = {}) {
+  try {
+    return execFileSync('git', args, options);
+  } catch (error) {
+    if (error && error.status === 0) {
+      if (typeof error.stdout === 'string') {
+        return error.stdout;
+      }
+      if (Buffer.isBuffer(error.stdout)) {
+        const encoding = typeof options.encoding === 'string' ? options.encoding : 'utf-8';
+        return error.stdout.toString(encoding);
+      }
+      return '';
+    }
+    throw error;
+  }
+}
+
+function getGitConfig(key, cwd = process.cwd()) {
+  try {
+    return runGit(['config', '--get', key], { cwd, encoding: 'utf-8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function normalizeAIPolicy(value) {
+  const policy = (value || '').toLowerCase().trim();
+  return VALID_AI_POLICIES.has(policy) ? policy : '';
+}
+
+function getAIPolicy(gitRoot) {
+  const envPolicy = normalizeAIPolicy(process.env.GIT_COMMIT_AI_POLICY || '');
+  if (envPolicy) return envPolicy;
+
+  const configPolicy = normalizeAIPolicy(getGitConfig('commitai.aiInfoPolicy', gitRoot || process.cwd()));
+  return configPolicy || 'auto';
+}
+
+function stripCommentLines(message) {
+  return message
+    .split('\n')
+    .filter(line => !line.startsWith('#'))
+    .join('\n')
+    .trim();
+}
+
+function splitCommitMessage(message) {
+  const clean = stripCommentLines(message);
+  if (!clean) {
+    return { clean: '', header: '', body: '' };
+  }
+
+  const lines = clean.split('\n');
+  const header = (lines.shift() || '').trim();
+  const body = lines.join('\n').trim();
+
+  return { clean, header, body };
+}
+
 /**
  * Get Git repository information
  */
 function getGitInfo(cwd = process.cwd()) {
   try {
-    const root = execSync('git rev-parse --show-toplevel', { cwd, encoding: 'utf-8' }).trim();
-    const branch = execSync('git branch --show-current', { cwd, encoding: 'utf-8' }).trim();
-    const userName = execSync('git config user.name', { cwd, encoding: 'utf-8' }).trim();
-    const userEmail = execSync('git config user.email', { cwd, encoding: 'utf-8' }).trim();
-    
+    const root = runGit(['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf-8' }).trim();
+    const branch = runGit(['branch', '--show-current'], { cwd, encoding: 'utf-8' }).trim();
+    const userName = getGitConfig('user.name', cwd);
+    const userEmail = getGitConfig('user.email', cwd);
+
     return { root, branch, userName, userEmail };
   } catch (e) {
     return null;
@@ -88,7 +154,7 @@ function getGitInfo(cwd = process.cwd()) {
 function getChangedFilesInfo(cwd = process.cwd()) {
   try {
     // Get staged files
-    const stagedOutput = execSync('git diff --cached --numstat', { cwd, encoding: 'utf-8' });
+    const stagedOutput = runGit(['diff', '--cached', '--numstat'], { cwd, encoding: 'utf-8' });
     const stagedFiles = stagedOutput.split('\n')
       .filter(l => l.trim())
       .map(line => {
@@ -102,7 +168,7 @@ function getChangedFilesInfo(cwd = process.cwd()) {
       });
     
     // Get unstaged files
-    const unstagedOutput = execSync('git diff --numstat', { cwd, encoding: 'utf-8' });
+    const unstagedOutput = runGit(['diff', '--numstat'], { cwd, encoding: 'utf-8' });
     const unstagedFiles = unstagedOutput.split('\n')
       .filter(l => l.trim())
       .map(line => {
@@ -116,7 +182,7 @@ function getChangedFilesInfo(cwd = process.cwd()) {
       });
     
     // Get untracked files
-    const untrackedOutput = execSync('git ls-files --others --exclude-standard', { cwd, encoding: 'utf-8' });
+    const untrackedOutput = runGit(['ls-files', '--others', '--exclude-standard'], { cwd, encoding: 'utf-8' });
     const untrackedFiles = untrackedOutput.split('\n')
       .filter(l => l.trim())
       .map(file => ({
@@ -320,8 +386,7 @@ function generateCommitMessage(options, aiData, gitInfo) {
 /**
  * Parse command line arguments
  */
-function parseArgs() {
-  const args = process.argv.slice(2);
+function parseArgs(args = process.argv.slice(2)) {
   const options = {
     type: '',
     scope: '',
@@ -331,6 +396,9 @@ function parseArgs() {
     includeAI: true,
     dryRun: false,
     installHook: false,
+    hookModeFile: '',
+    validateHookModeFile: '',
+    aiPolicy: '',
   };
   
   for (let i = 0; i < args.length; i++) {
@@ -339,23 +407,23 @@ function parseArgs() {
     switch (arg) {
       case '-t':
       case '--type':
-        options.type = args[++i];
+        options.type = args[++i] || '';
         break;
       case '-s':
       case '--scope':
-        options.scope = args[++i];
+        options.scope = args[++i] || '';
         break;
       case '-m':
       case '--message':
-        options.message = args[++i];
+        options.message = args[++i] || '';
         break;
       case '-b':
       case '--body':
-        options.body = args[++i];
+        options.body = args[++i] || '';
         break;
       case '-B':
       case '--breaking':
-        options.breaking = args[++i];
+        options.breaking = args[++i] || '';
         break;
       case '--no-ai':
         options.includeAI = false;
@@ -365,6 +433,15 @@ function parseArgs() {
         break;
       case '--install-hook':
         options.installHook = true;
+        break;
+      case '--hook-mode':
+        options.hookModeFile = args[++i] || '';
+        break;
+      case '--validate-hook-mode':
+        options.validateHookModeFile = args[++i] || '';
+        break;
+      case '--ai-policy':
+        options.aiPolicy = (args[++i] || '').trim();
         break;
       default:
         if (!arg.startsWith('-') && !options.message) {
@@ -377,33 +454,208 @@ function parseArgs() {
 }
 
 /**
- * Install git hook
+ * Install git hooks
  */
-function installHook() {
+function resolveHooksDir(gitRoot) {
+  const hooksPath = getGitConfig('core.hooksPath', gitRoot);
+  if (!hooksPath) {
+    return path.join(gitRoot, '.git', 'hooks');
+  }
+
+  return path.isAbsolute(hooksPath)
+    ? hooksPath
+    : path.resolve(gitRoot, hooksPath);
+}
+
+function installManagedHook(hookPath, hookContent) {
+  const marker = '# Generated by git-commit-ai skill';
+  const legacyHookPath = `${hookPath}.legacy`;
+
+  if (fs.existsSync(hookPath)) {
+    const existing = fs.readFileSync(hookPath, 'utf-8');
+    if (!existing.includes(marker) && !fs.existsSync(legacyHookPath)) {
+      fs.renameSync(hookPath, legacyHookPath);
+      console.log(`📦 Backed up existing hook: ${legacyHookPath}`);
+    }
+  }
+
+  fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
+}
+
+function installHook(options = {}) {
   const gitInfo = getGitInfo();
   if (!gitInfo) {
-    console.error('Error: Not a git repository');
+    console.error('❌ Error: Not a git repository');
     process.exit(1);
   }
-  
-  const hookPath = path.join(gitInfo.root, '.git', 'hooks', 'prepare-commit-msg');
-  const scriptPath = path.join(__dirname, 'prepare-commit-msg-hook.sh');
-  
-  const hookContent = `#!/bin/sh
+
+  const hooksDir = resolveHooksDir(gitInfo.root);
+  fs.mkdirSync(hooksDir, { recursive: true });
+
+  const prepareHookPath = path.join(hooksDir, 'prepare-commit-msg');
+  const commitMsgHookPath = path.join(hooksDir, 'commit-msg');
+  const entryScript = path.join(__dirname, 'git-commit-ai.js');
+
+  const prepareHookContent = `#!/bin/sh
 # AI Commit Metadata Hook
 # Generated by git-commit-ai skill
 
 COMMIT_MSG_FILE=$1
 COMMIT_SOURCE=$2
+LEGACY_HOOK="$0.legacy"
+
+if [ -x "$LEGACY_HOOK" ]; then
+  "$LEGACY_HOOK" "$@"
+fi
 
 # Only modify for regular commits (not merge, squash, etc.)
 if [ -z "$COMMIT_SOURCE" ]; then
-  node "${__dirname}/git-commit-ai.js" --hook-mode "$COMMIT_MSG_FILE"
+  node "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
 fi
 `;
-  
-  fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
-  console.log(`✅ Git hook installed at: ${hookPath}`);
+
+  const commitMsgHookContent = `#!/bin/sh
+# AI Commit Gate Hook
+# Generated by git-commit-ai skill
+
+COMMIT_MSG_FILE=$1
+LEGACY_HOOK="$0.legacy"
+
+if [ -x "$LEGACY_HOOK" ]; then
+  "$LEGACY_HOOK" "$@"
+fi
+
+# Try to enrich first, then validate
+node "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
+node "${entryScript}" --validate-hook-mode "$COMMIT_MSG_FILE"
+`;
+
+  installManagedHook(prepareHookPath, prepareHookContent);
+  installManagedHook(commitMsgHookPath, commitMsgHookContent);
+
+  const requestedPolicy = normalizeAIPolicy(options.aiPolicy);
+  if (options.aiPolicy && !requestedPolicy) {
+    console.error('❌ Invalid --ai-policy, use one of: auto|always|never');
+    process.exit(1);
+  }
+
+  const currentPolicy = normalizeAIPolicy(getGitConfig('commitai.aiInfoPolicy', gitInfo.root));
+  const effectivePolicy = requestedPolicy || currentPolicy || 'auto';
+  runGit(['config', '--local', 'commitai.aiInfoPolicy', effectivePolicy], {
+    cwd: gitInfo.root,
+    stdio: 'ignore',
+  });
+
+  console.log('✅ Git hooks installed:');
+  console.log(`   - ${prepareHookPath}`);
+  console.log(`   - ${commitMsgHookPath}`);
+  console.log(`🔒 AI gate policy: ${effectivePolicy} (git config commitai.aiInfoPolicy)`);
+}
+
+function shouldSkipValidation(header) {
+  return /^(Merge|Revert)\b/.test(header);
+}
+
+function validateAIInfoBlock(message) {
+  const requiredRules = [
+    { key: 'Agents', rule: /^  Agents: .+$/m },
+    { key: 'Sessions', rule: /^  Sessions: \d+$/m },
+    { key: 'Involvement', rule: /^  Involvement: (100|[1-9]?\d)%$/m },
+    { key: 'Depth', rule: /^  Depth: (None|Low|Medium|High|Full)\b/m },
+  ];
+
+  const missing = requiredRules
+    .filter(({ rule }) => !rule.test(message))
+    .map(({ key }) => key);
+
+  return {
+    valid: missing.length === 0,
+    missing,
+  };
+}
+
+function shouldRequireAIInfo(policy, aiData) {
+  if (policy === 'always') return true;
+  if (policy === 'never') return false;
+  return Boolean(aiData?.aiUsed);
+}
+
+function validateCommitMessage(commitMsgFile) {
+  const rawMessage = fs.readFileSync(commitMsgFile, 'utf-8');
+  const { clean, header } = splitCommitMessage(rawMessage);
+
+  if (!clean || !header || shouldSkipValidation(header)) {
+    return { valid: true };
+  }
+
+  const headerMatch = header.match(COMMIT_HEADER_REGEX);
+  if (!headerMatch) {
+    return {
+      valid: false,
+      message: '提交标题不符合规范，应为: <emoji> [AI] type(scope): subject',
+    };
+  }
+
+  if (!VALID_TYPES.has(headerMatch[1])) {
+    return {
+      valid: false,
+      message: `不支持的提交类型: ${headerMatch[1]}`,
+    };
+  }
+
+  const hasAITag = header.includes('[AI]');
+  const hasAIInfo = /(^|\n)AI-Info:\s*\n/m.test(clean);
+
+  if (hasAITag && !hasAIInfo) {
+    return {
+      valid: false,
+      message: '检测到 [AI] 标签，但缺少 AI-Info 元数据区块',
+    };
+  }
+
+  if (hasAIInfo) {
+    const blockCheck = validateAIInfoBlock(clean);
+    if (!blockCheck.valid) {
+      return {
+        valid: false,
+        message: `AI-Info 缺少必填字段: ${blockCheck.missing.join(', ')}`,
+      };
+    }
+  }
+
+  const gitInfo = getGitInfo() || { root: process.cwd() };
+  const policy = getAIPolicy(gitInfo.root);
+  let aiData = { aiUsed: false };
+
+  if (policy !== 'never') {
+    try {
+      aiData = analyzeAIUsage(gitInfo.root);
+    } catch {
+      aiData = { aiUsed: false };
+    }
+  }
+
+  if (shouldRequireAIInfo(policy, aiData) && !hasAIInfo) {
+    return {
+      valid: false,
+      message: `当前策略(${policy})要求包含 AI-Info，请改用 skill 提交或手动补充元数据`,
+    };
+  }
+
+  return { valid: true };
+}
+
+function validateHookMode(commitMsgFile) {
+  if (!commitMsgFile) {
+    console.error('❌ Missing commit message file for --validate-hook-mode');
+    process.exit(1);
+  }
+
+  const result = validateCommitMessage(commitMsgFile);
+  if (!result.valid) {
+    console.error(`❌ Commit rejected: ${result.message}`);
+    process.exit(1);
+  }
 }
 
 /**
@@ -423,7 +675,7 @@ async function interactiveMode(options, aiData) {
   console.log('\n🤖 AI-Assisted Git Commit\n');
   
   // Show AI detection info
-  if (aiData.aiUsed) {
+  if (aiData?.aiUsed) {
     console.log(`📊 Detected AI usage:`);
     console.log(`   Agents: ${aiData.agents.join(', ')}`);
     console.log(`   Sessions: ${aiData.sessionCount}`);
@@ -518,44 +770,51 @@ function hookMode(commitMsgFile) {
  * Main execution
  */
 async function main() {
-  const args = process.argv.slice(2);
-  
-  // Hook mode
-  if (args.includes('--hook-mode')) {
-    const fileIndex = args.indexOf('--hook-mode') + 1;
-    hookMode(args[fileIndex]);
+  let options = parseArgs();
+
+  if (options.hookModeFile) {
+    hookMode(options.hookModeFile);
     return;
   }
-  
-  // Install hook
-  if (args.includes('--install-hook')) {
-    installHook();
+
+  if (options.validateHookModeFile) {
+    validateHookMode(options.validateHookModeFile);
     return;
   }
-  
-  const options = parseArgs();
+
+  if (options.installHook) {
+    installHook(options);
+    return;
+  }
+
   const gitInfo = getGitInfo();
-  
+
   if (!gitInfo) {
     console.error('❌ Error: Not a git repository');
     process.exit(1);
   }
-  
+
+  if (options.type && !VALID_TYPES.has(options.type)) {
+    console.error(`❌ Unsupported commit type: ${options.type}`);
+    console.error(`   Supported types: ${Array.from(VALID_TYPES).join(', ')}`);
+    process.exit(1);
+  }
+
   // Analyze AI usage
   let aiData = null;
   if (options.includeAI) {
     console.log('🔍 Analyzing AI usage...');
     aiData = analyzeAIUsage(gitInfo.root);
   }
-  
+
   // Interactive mode if needed
   if (!options.message || !options.type) {
     options = await interactiveMode(options, aiData);
   }
-  
+
   // Generate commit message
   const commitMessage = generateCommitMessage(options, aiData, gitInfo);
-  
+
   // Dry run
   if (options.dryRun) {
     console.log('\n📋 Commit Message Preview:\n');
@@ -564,20 +823,20 @@ async function main() {
     console.log('─'.repeat(50));
     return;
   }
-  
+
   // Execute git commit
   try {
     const commitFile = path.join(require('os').tmpdir(), `git-commit-ai-${Date.now()}.txt`);
     fs.writeFileSync(commitFile, commitMessage);
-    
-    execSync(`git commit -F "${commitFile}"`, { 
+
+    runGit(['commit', '-F', commitFile], {
       cwd: gitInfo.root,
       stdio: 'inherit',
     });
-    
+
     fs.unlinkSync(commitFile);
     console.log('✅ Commit successful!');
-    
+
   } catch (e) {
     console.error('❌ Commit failed:', e.message);
     process.exit(1);

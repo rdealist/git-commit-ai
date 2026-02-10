@@ -8,7 +8,25 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+
+function runGit(args, options = {}) {
+  try {
+    return execFileSync('git', args, options);
+  } catch (error) {
+    if (error && error.status === 0) {
+      if (typeof error.stdout === 'string') {
+        return error.stdout;
+      }
+      if (Buffer.isBuffer(error.stdout)) {
+        const encoding = typeof options.encoding === 'string' ? options.encoding : 'utf-8';
+        return error.stdout.toString(encoding);
+      }
+      return '';
+    }
+    throw error;
+  }
+}
 
 // Agent configuration with data locations and parsers
 const AGENT_CONFIG = {
@@ -43,7 +61,7 @@ const AGENT_CONFIG = {
  */
 function getGitRoot(cwd = process.cwd()) {
   try {
-    return execSync('git rev-parse --show-toplevel', { cwd, encoding: 'utf-8' }).trim();
+    return runGit(['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf-8' }).trim();
   } catch {
     return null;
   }
@@ -54,7 +72,7 @@ function getGitRoot(cwd = process.cwd()) {
  */
 function getLastCommitTime(cwd = process.cwd()) {
   try {
-    const timestamp = execSync('git log -1 --format=%ct', { cwd, encoding: 'utf-8' }).trim();
+    const timestamp = runGit(['log', '-1', '--format=%ct'], { cwd, encoding: 'utf-8' }).trim();
     return parseInt(timestamp, 10) * 1000; // Convert to milliseconds
   } catch {
     return 0;
@@ -66,7 +84,7 @@ function getLastCommitTime(cwd = process.cwd()) {
  */
 function getChangedFiles(cwd = process.cwd()) {
   try {
-    const output = execSync('git diff --name-only HEAD', { cwd, encoding: 'utf-8' });
+    const output = runGit(['diff', '--name-only', 'HEAD'], { cwd, encoding: 'utf-8' });
     return output.split('\n').filter(f => f.trim());
   } catch {
     return [];

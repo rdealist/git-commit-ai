@@ -12,7 +12,7 @@
 - ✨ Angular + GitMoji 提交规范
 - 🤖 自动检测与追踪 AI 使用情况
 - 📊 AI 参与度和使用深度分析
-- 🪝 可选 Git Hook 自动增强提交信息
+- 🪝 本地 Git Hook 自动补全 + 提交门禁校验
 
 ## 📦 安装
 
@@ -108,8 +108,11 @@ git clone https://github.com/rdealist/git-commit-ai.git \
 # 仅预览
 /skill:git-commit-ai --dry-run -t feat -m "测试提交"
 
-# 在当前仓库安装 git hook
+# 在当前仓库安装本地门禁 hook（默认 auto）
 /skill:git-commit-ai --install-hook
+
+# 安装并强制要求每次提交都带 AI-Info
+/skill:git-commit-ai --install-hook --ai-policy always
 ```
 
 ### 在 Cursor / 其他 Agent 中使用
@@ -241,17 +244,42 @@ git log --all --format="%h %ai %s" --grep="Involvement:"
 git log --all --format="%H|%an|%ai|%s" --grep="AI-Info:" > ai-commits.csv
 ```
 
-## 🔧 Git Hook 集成
+## 🤖 Agent 自动化落地
 
-在仓库中安装 git hook，可自动增强所有提交信息：
+如果你需要让其他 Agent 在项目中自动完成 skill 安装、hooks 门禁改造、提交与推送，可直接使用：
+
+- `docs/AGENT_AUTOPILOT_PLAYBOOK.md`
+
+该文档提供了可执行变量、命令模板、兼容策略与失败处理流程。
+
+## 🔧 Git Hook 集成（本地门禁）
+
+在仓库中安装后，会同时启用两个本地 hook：
+
+- `prepare-commit-msg`：尝试自动补充 `AI-Info`
+- `commit-msg`：提交门禁，校验标题规范和 AI 元数据完整性
 
 ```bash
 cd /path/to/your/repo
+
+# 默认策略：auto（检测到 AI 使用时必须带 AI-Info）
 /skill:git-commit-ai --install-hook
 
-# 安装后所有提交会自动附带 AI 元数据
-git commit -m "fix bug"  # → 🐛 fix: fix bug + AI-Info
+# 可选策略：always / never
+/skill:git-commit-ai --install-hook --ai-policy always
 ```
+
+策略说明（可通过 `git config --local commitai.aiInfoPolicy <policy>` 修改）：
+
+- `auto`：仅当检测到 AI 使用时，强制要求 `AI-Info`
+- `always`：无论是否检测到 AI，统一要求 `AI-Info`
+- `never`：不强制 `AI-Info`，仅校验提交标题规范
+
+门禁会校验：
+
+- 标题符合 Angular + Emoji 规范（支持可选 `[AI]` 标签）
+- 若出现 `[AI]`，则必须存在 `AI-Info` 区块
+- `AI-Info` 至少包含 `Agents / Sessions / Involvement / Depth`
 
 ## 📁 仓库结构
 
