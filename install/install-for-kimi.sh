@@ -27,24 +27,31 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Detect install directory
+# Kimi CLI only loads skills from the first existing directory in its discovery list.
 if [[ "$PROJECT_MODE" == "true" ]]; then
-    if [[ -d ".kimi" ]]; then
-        INSTALL_DIR=".kimi/skills"
-    else
-        echo "⚠️  No .kimi directory found in project."
-        echo "   Creating .kimi/skills for project-level installation."
-        INSTALL_DIR=".kimi/skills"
-    fi
+    CANDIDATE_DIRS=(
+        ".agents/skills"
+        ".kimi/skills"
+        ".claude/skills"
+        ".codex/skills"
+    )
 else
-    # Global installation
-    if [[ -d "$HOME/.config/agents/skills" ]]; then
-        INSTALL_DIR="$HOME/.config/agents/skills"
-    elif [[ -d "$HOME/.kimi" ]]; then
-        INSTALL_DIR="$HOME/.kimi/skills"
-    else
-        INSTALL_DIR="$HOME/.config/agents/skills"
-    fi
+    CANDIDATE_DIRS=(
+        "$HOME/.config/agents/skills"
+        "$HOME/.agents/skills"
+        "$HOME/.kimi/skills"
+        "$HOME/.claude/skills"
+        "$HOME/.codex/skills"
+    )
 fi
+
+INSTALL_DIR="${CANDIDATE_DIRS[0]}"
+for dir in "${CANDIDATE_DIRS[@]}"; do
+    if [[ -d "$dir" ]]; then
+        INSTALL_DIR="$dir"
+        break
+    fi
+done
 
 echo "🔧 Installing git-commit-ai skill for Kimi CLI..."
 echo "   Mode: $([ "$PROJECT_MODE" == "true" ] && echo "Project-level" || echo "Global")"

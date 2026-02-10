@@ -150,19 +150,33 @@ detect_agent_install_dir() {
             fi
             ;;
         kimi|kimi-cli)
-            if [[ "$project_mode" == "true" ]] && [[ -d ".kimi" ]]; then
-                echo ".kimi/skills"
-            elif [[ "$project_mode" == "true" ]]; then
-                echo ".kimi/skills"
-            elif [[ -d "$HOME/.kimi" ]]; then
-                if [[ -d "$HOME/.config/agents/skills" ]]; then
-                    echo "$HOME/.config/agents/skills"
-                else
-                    echo "$HOME/.kimi/skills"
-                fi
+            local candidates=()
+            if [[ "$project_mode" == "true" ]]; then
+                candidates=(
+                    ".agents/skills"
+                    ".kimi/skills"
+                    ".claude/skills"
+                    ".codex/skills"
+                )
             else
-                echo "$HOME/.config/agents/skills"
+                candidates=(
+                    "$HOME/.config/agents/skills"
+                    "$HOME/.agents/skills"
+                    "$HOME/.kimi/skills"
+                    "$HOME/.claude/skills"
+                    "$HOME/.codex/skills"
+                )
             fi
+
+            local dir
+            for dir in "${candidates[@]}"; do
+                if [[ -d "$dir" ]]; then
+                    echo "$dir"
+                    return
+                fi
+            done
+
+            echo "${candidates[0]}"
             ;;
         cursor)
             if [[ "$project_mode" == "true" ]] && [[ -d ".cursor" ]]; then
