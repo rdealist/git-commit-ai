@@ -1,146 +1,108 @@
 ---
 name: git-commit-ai
 description: |
-  Generate Angular + Emoji style git commits with AI usage tracking and metadata.
-  Use this skill when you need to create a git commit, especially when the work 
-  was assisted by AI. Automatically analyzes AI agent sessions (Claude Code, Kimi CLI, etc.) 
-  to calculate AI involvement, extract prompt summaries, and measure usage depth.
-  
-  Trigger phrases: "git commit", "commit changes", "create commit", "ai commit",
-  "commit with tracking", or when user wants to commit their work.
+  Agent-first git commit automation with Angular + Emoji convention, AI metadata,
+  and local hook gate enforcement. Supports autonomous rollout in target repositories
+  via the playbook at docs/AGENT_AUTOPILOT_PLAYBOOK.md.
+
+  Trigger phrases: "git commit", "commit changes", "ai commit", "install hook",
+  "commit with tracking", or when user asks for autonomous setup.
 ---
 
-# Git Commit AI Skill
+# Git Commit AI Skill (Agent First)
 
-Generate conventional commits with automatic AI usage tracking.
+## Primary Mission
+
+1. Generate standardized commits (Angular + Emoji).
+2. Detect AI usage and append `AI-Info` metadata.
+3. Install local hook gate for enforcement (`prepare-commit-msg` + `commit-msg`).
+4. Support autonomous repository rollout with minimal user input.
+
+## One-Line Agent Bootstrap
+
+If user wants full autonomous setup (including target repo clone via `TARGET_REPO_URL`), use this source of truth:
+
+- `docs/AGENT_AUTOPILOT_PLAYBOOK.md`
 
 ## Quick Commands
 
-### Interactive Mode (Recommended)
+### Interactive Commit
 
-```
+```bash
 /skill:git-commit-ai
 ```
 
-Or simply ask:
-```
-Help me commit these changes
-```
+### Non-Interactive Commit
 
-### Quick Commit
-
-```
-/skill:git-commit-ai --type feat --message "add new feature"
-/skill:git-commit-ai -t fix -m "fix login bug"
-```
-
-### With Scope and Body
-
-```
-/skill:git-commit-ai -t feat -s auth -m "add JWT login" -b "Implements secure authentication"
-```
-
-### Preview Only (Dry Run)
-
-```
-/skill:git-commit-ai --dry-run -t feat -m "test commit"
+```bash
+/skill:git-commit-ai -t feat -m "add feature"
+/skill:git-commit-ai -t fix -s auth -m "fix login bug"
 ```
 
 ### Install Local Hook Gate
 
-```
-# Default policy: auto
+```bash
+# default policy = auto
 /skill:git-commit-ai --install-hook
 
-# Force AI metadata on every commit
+# policy override
 /skill:git-commit-ai --install-hook --ai-policy always
+/skill:git-commit-ai --install-hook --ai-policy never
 ```
 
-After installation, this repository uses local hooks for both auto-enrichment and commit gate validation.
+### Dry Run
 
-## How It Works
+```bash
+/skill:git-commit-ai --dry-run -t chore -m "test commit"
+```
 
-1. **Analyzes AI Sessions**: Scans local AI agent data (Claude Code, Kimi CLI sessions)
-2. **Calculates Involvement**: Estimates AI participation percentage (0-100%)
-3. **Measures Depth**: Scores usage depth (0-4) based on:
-   - Skill usage
-   - Workflow packaging (todos, multi-step)
-   - Prompt packaging (structured prompts)
-   - Context engineering (file operations)
-4. **Generates Commit**: Creates Angular + Emoji format commit with AI-Info footer
+## Hook Gate Behavior
+
+- `prepare-commit-msg`: best-effort auto-enrichment of AI metadata.
+- `commit-msg`: commit message validation and policy enforcement.
+- Existing hooks compatibility:
+  - non-managed hooks are backed up as `*.legacy`
+  - managed hooks call legacy hook first, then run git-commit-ai logic
 
 ## Commit Format
 
-```
-✨ feat(scope): short description
-
-Optional body explaining the change...
+```text
+✨ [AI] feat(scope): type-desc - short message
 
 AI-Info:
-  Agents: claude-code, kimi-cli
-  Sessions: 3
-  Involvement: 75%
+  Agents: codex, kimi-cli
+  Sessions: 2
+  Involvement: 70%
   Depth: High 🚀
-  Features: skills, workflow
-  Skills: skill-creator
-  Prompt: "Implement feature with..."
+```
+
+## Options
+
+```text
+-t, --type <type>       Commit type
+-s, --scope <scope>     Commit scope
+-m, --message <msg>     Commit message
+-b, --body <body>       Commit body
+-B, --breaking <desc>   Breaking change
+--dry-run               Preview commit
+--install-hook          Install local hooks (prepare-commit-msg + commit-msg)
+--ai-policy <policy>    Hook policy: auto|always|never
+--no-ai                 Disable AI metadata detection
 ```
 
 ## Commit Types
 
-| Type | Emoji | Use Case |
-|------|-------|----------|
-| feat | ✨ | New features |
-| fix | 🐛 | Bug fixes |
-| docs | 📚 | Documentation |
-| style | 💎 | Code formatting |
-| refactor | ♻️ | Code refactoring |
-| perf | ⚡ | Performance |
-| test | 🧪 | Tests |
-| chore | 🔧 | Tooling, deps |
-| ci | 🔨 | CI/CD |
-| build | 📦 | Build system |
-
-## Options
-
-```
--t, --type <type>       Commit type (required if not interactive)
--s, --scope <scope>     Commit scope (optional)
--m, --message <msg>     Commit message (required if not interactive)
--b, --body <body>       Extended description (optional)
--B, --breaking <desc>   Breaking change description (optional)
---dry-run               Preview commit without committing
---install-hook          Install local hooks (prepare-commit-msg + commit-msg)
---ai-policy <policy>    Hook AI policy: auto|always|never
---no-ai                 Skip AI metadata detection
---help                  Show help
-```
-
-## AI Metadata Fields
-
-- **Agents**: Which AI agents were used (claude-code, kimi-cli, etc.)
-- **Sessions**: Number of AI sessions analyzed
-- **Involvement**: Estimated AI participation percentage
-- **Depth**: Usage depth level (None/Low/Medium/High/Full)
-- **Features**: AI capabilities used (skills, workflow, prompts, context)
-- **Skills**: Specific skills invoked
-- **Prompt**: Truncated summary of user prompts
+- `feat` `fix` `docs` `style` `refactor` `perf`
+- `test` `chore` `ci` `build` `revert` `wip` `ai`
 
 ## Requirements
 
-- Node.js >= 14.0.0
+- Node.js >= 14
 - Git repository
-- For AI detection: Claude Code, Kimi CLI, or other supported agents
-
-## Agent Rollout
-
-For agent-driven repository transformation (skill install + local hook gate + commit/push workflow), see:
-
-- `docs/AGENT_AUTOPILOT_PLAYBOOK.md`
+- AI session data available locally (optional but recommended)
 
 ## Notes
 
-- AI metadata is only included when AI sessions are detected in the current timeframe
-- The skill automatically detects which AI agents are installed
-- Hook installation is per-repository and includes local commit gate checks
-- All analysis is local - no data is sent to external servers
+- Metadata generation is local-only.
+- For full autonomous rollout (install + validate + push), follow:
+  - `docs/AGENT_AUTOPILOT_PLAYBOOK.md`
