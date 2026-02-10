@@ -1,6 +1,6 @@
 ---
 id: git-commit-ai-agent-autopilot
-version: 2.0.0
+version: 2.1.0
 language: zh-CN
 owner: repo-maintainers
 last_updated: 2026-02-10
@@ -14,7 +14,7 @@ last_updated: 2026-02-10
 
 Agent 必须在目标仓库完成以下动作：
 
-1. 安装/更新 `git-commit-ai` skill（优先全局）。
+1. 安装/更新 `git-commit-ai` skill（优先项目目录，可切换全局）。
 2. 配置本地门禁 hooks（`prepare-commit-msg` + `commit-msg`）。
 3. 兼容已有 hooks（备份为 `.legacy` 并串联执行）。
 4. 基于 skill 生成规范提交信息并提交代码。
@@ -32,9 +32,10 @@ Agent 必须在目标仓库完成以下动作：
 ```bash
 TARGET_REPO="${TARGET_REPO:-$(pwd)}"
 TARGET_REPO_URL="${TARGET_REPO_URL:-}"  # 可选：目标仓库远端地址（本地不存在时使用）
-AGENT_NAME="${AGENT_NAME:-codex}"   # claude-code|codex|gemini-cli|kimi-cli|cursor|aider
-AI_POLICY="${AI_POLICY:-auto}"      # auto|always|never
-AUTO_PUSH="${AUTO_PUSH:-1}"         # 1=自动推送, 0=仅提交
+AGENT_NAME="${AGENT_NAME:-codex}"       # claude-code|codex|gemini-cli|kimi-cli|cursor|aider
+INSTALL_MODE="${INSTALL_MODE:-auto}"    # auto|project|global
+AI_POLICY="${AI_POLICY:-auto}"          # auto|always|never
+AUTO_PUSH="${AUTO_PUSH:-1}"             # 1=自动推送, 0=仅提交
 COMMIT_TYPE="${COMMIT_TYPE:-chore}"
 COMMIT_SCOPE="${COMMIT_SCOPE:-}"
 COMMIT_MSG="${COMMIT_MSG:-update changes}"
@@ -61,15 +62,40 @@ fi
 ### 步骤 A：安装或更新 skill
 
 ```bash
+MODE_ARGS=()
+case "${INSTALL_MODE}" in
+  auto|"")
+    ;;
+  project)
+    MODE_ARGS+=(--project)
+    ;;
+  global)
+    MODE_ARGS+=(--global)
+    ;;
+  *)
+    echo "[ERROR] INSTALL_MODE 必须是 auto|project|global" >&2
+    exit 1
+    ;;
+esac
+
 if command -v bash >/dev/null 2>&1; then
-  curl -fsSL "${REPO_RAW_BASE}/install/install.sh" | bash -s -- --global --agent "${AGENT_NAME}"
+  curl -fsSL "${REPO_RAW_BASE}/install/install.sh" | bash -s -- --agent "${AGENT_NAME}" "${MODE_ARGS[@]}"
 elif command -v powershell >/dev/null 2>&1; then
-  powershell -ExecutionPolicy Bypass -Command "iwr -useb ${REPO_RAW_BASE}/install/install.ps1 | iex"
+  PS_MODE_FLAG=""
+  [ "${INSTALL_MODE}" = "project" ] && PS_MODE_FLAG="-Project"
+  [ "${INSTALL_MODE}" = "global" ] && PS_MODE_FLAG="-Global"
+  powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((iwr -useb '${REPO_RAW_BASE}/install/install.ps1'))) -Agent '${AGENT_NAME}' ${PS_MODE_FLAG}"
 else
   echo "[ERROR] 未找到 bash/powershell，无法自动安装 skill" >&2
   exit 1
 fi
 ```
+
+说明：
+
+- `INSTALL_MODE=auto`：交互终端内会提示用户选择 Project/Global；非交互默认“仓库内=Project、非仓库=Global”。
+- `INSTALL_MODE=project`：强制项目级安装（推荐，便于仓库自治）。
+- `INSTALL_MODE=global`：强制全局安装（适合本机多仓库共享）。
 
 > 如果网络受限：请使用本地镜像仓库路径执行 `install/install.sh` 或 `install/install.ps1`。
 
@@ -78,6 +104,14 @@ fi
 ```bash
 find_skill_script() {
   local candidates=(
+    "$TARGET_REPO/.claude/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$TARGET_REPO/.codex/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$TARGET_REPO/.gemini/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$TARGET_REPO/.agents/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$TARGET_REPO/.kimi/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$TARGET_REPO/.cursor/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$TARGET_REPO/.aider/skills/git-commit-ai/scripts/git-commit-ai.js"
+    "$TARGET_REPO/.ai-skills/git-commit-ai/scripts/git-commit-ai.js"
     "$HOME/.claude/skills/git-commit-ai/scripts/git-commit-ai.js"
     "$HOME/.codex/skills/git-commit-ai/scripts/git-commit-ai.js"
     "$HOME/.codex/git-commit-ai/scripts/git-commit-ai.js"
@@ -189,5 +223,5 @@ fi
 ## 6. 可直接下发给其他 Agent 的单行任务
 
 ```text
-请在目标仓库（未指定则当前目录）按本文件完整执行 git-commit-ai 自动化落地：安装/更新 skill、配置并校验本地 hooks 门禁、兼容已有 hooks、使用 skill 完成提交并推送，禁止 --no-verify 与强推，失败按本文件策略自动修复重试。
+请在目标仓库（未指定则当前目录）按本文件完整执行 git-commit-ai 自动化落地：优先项目级安装（可按 INSTALL_MODE 切换）、安装/更新 skill、配置并校验本地 hooks 门禁、兼容已有 hooks、使用 skill 完成提交并推送，禁止 --no-verify 与强推，失败按本文件策略自动修复重试。
 ```

@@ -12,6 +12,7 @@
 ```
 
 > 适用于：用户不克隆本仓库、只把一条指令发给 Agent 的场景。
+> 可通过 `INSTALL_MODE=project|global|auto` 控制安装模式（默认 `auto`）。
 
 ## 🎯 Agent 优先工作流
 
@@ -35,13 +36,27 @@
 **macOS / Linux**
 
 ```bash
+# 自动模式：交互时提示 Project/Global；非交互默认“仓库内=Project、非仓库=Global”
 curl -fsSL https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.sh | bash
+
+# 强制项目级安装
+curl -fsSL https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.sh | bash -s -- --project
+
+# 强制全局安装
+curl -fsSL https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.sh | bash -s -- --global
 ```
 
 **Windows PowerShell**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iwr -useb https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.ps1 | iex"
+# 自动模式：交互时提示 Project/Global；非交互默认“仓库内=Project、非仓库=Global”
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((iwr -useb 'https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.ps1')))"
+
+# 强制项目级安装
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((iwr -useb 'https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.ps1'))) -Project"
+
+# 强制全局安装
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((iwr -useb 'https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install/install.ps1'))) -Global"
 ```
 
 ### 指定 Agent 安装

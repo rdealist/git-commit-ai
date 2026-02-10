@@ -8,7 +8,7 @@
 #
 # Options:
 #   --project          Install to current project (./.claude/skills, ./.kimi/skills, etc.)
-#   --global           Install to user home (default)
+#   --global           Install to user home
 #   --agent <name>     Force specific agent (claude-code, codex, gemini-cli, kimi-cli, cursor, aider)
 #
 
@@ -20,6 +20,7 @@ REPO_URL="${REPO_URL:-https://github.com/rdealist/git-commit-ai}"
 
 # Default mode
 PROJECT_MODE=false
+MODE_EXPLICIT=false
 FORCE_AGENT=""
 
 # Colors
@@ -57,10 +58,12 @@ parse_args() {
         case $1 in
             --project)
                 PROJECT_MODE=true
+                MODE_EXPLICIT=true
                 shift
                 ;;
             --global)
                 PROJECT_MODE=false
+                MODE_EXPLICIT=true
                 shift
                 ;;
             --agent)
@@ -86,12 +89,12 @@ Usage: install.sh [OPTIONS]
 
 Options:
   --project          Install to current project (./.claude/skills, etc.)
-  --global           Install to user home directory (default)
+  --global           Install to user home directory
   --agent <name>     Force specific agent (claude-code, codex, gemini-cli, kimi-cli, cursor, aider)
   --help             Show this help message
 
 Examples:
-  # Auto-detect and install globally
+  # Interactive mode (recommended in terminal)
   ./install.sh
 
   # Install to current project
@@ -251,6 +254,62 @@ get_project_root() {
     git rev-parse --show-toplevel 2>/dev/null || echo ""
 }
 
+# Select installation mode (project/global)
+select_install_mode() {
+    if [[ "$MODE_EXPLICIT" == "true" ]]; then
+        log_info "Mode preset by flag: $( [[ "$PROJECT_MODE" == "true" ]] && echo "Project-level" || echo "Global" )"
+        return
+    fi
+
+    local in_repo=false
+    if is_git_repo; then
+        in_repo=true
+    fi
+
+    if [[ -t 0 && -t 1 ]]; then
+        echo ""
+        log_info "Select installation mode:"
+
+        if [[ "$in_repo" == "true" ]]; then
+            echo "  1) Project-level (recommended)"
+            echo "  2) Global"
+            read -r -p "Choose [1/2] (default: 1): " choice
+
+            case "$choice" in
+                2|g|G|global|GLOBAL)
+                    PROJECT_MODE=false
+                    ;;
+                *)
+                    PROJECT_MODE=true
+                    ;;
+            esac
+        else
+            echo "  1) Global (recommended, current directory is not a git repository)"
+            echo "  2) Project-level (requires git repository)"
+            read -r -p "Choose [1/2] (default: 1): " choice
+
+            case "$choice" in
+                2|p|P|project|PROJECT)
+                    log_error "Project-level installation requires being inside a git repository."
+                    log_info "Run from a repository or use --global."
+                    exit 1
+                    ;;
+                *)
+                    PROJECT_MODE=false
+                    ;;
+            esac
+        fi
+    else
+        if [[ "$in_repo" == "true" ]]; then
+            PROJECT_MODE=true
+            log_info "No mode flag provided; defaulting to project-level installation."
+        else
+            PROJECT_MODE=false
+            log_info "No mode flag provided; defaulting to global installation."
+        fi
+    fi
+}
+
 # Install skill
 install_skill() {
     local agent=$1
@@ -380,6 +439,9 @@ print_usage() {
 main() {
     parse_args "$@"
     print_banner
+    select_install_mode
+
+    log_info "Mode: $( [[ "$PROJECT_MODE" == "true" ]] && echo "Project-level" || echo "Global" )"
     
     # Check project mode requirements
     if [[ "$PROJECT_MODE" == "true" ]]; then

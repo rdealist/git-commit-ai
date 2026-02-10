@@ -30,6 +30,7 @@ $ErrorActionPreference = "Stop"
 
 $SkillName = "git-commit-ai"
 $ProjectMode = $false
+$ModeExplicit = $false
 
 if ($Project -and $Global) {
     throw "-Project and -Global cannot be used together."
@@ -37,6 +38,11 @@ if ($Project -and $Global) {
 
 if ($Project) {
     $ProjectMode = $true
+    $ModeExplicit = $true
+}
+elseif ($Global) {
+    $ProjectMode = $false
+    $ModeExplicit = $true
 }
 
 function Write-Info {
@@ -77,6 +83,61 @@ function Get-ProjectRoot {
     }
 
     return (Get-Location).Path
+}
+
+function Select-InstallMode {
+    if ($script:ModeExplicit) {
+        Write-Info "Mode preset by flag: $(if ($script:ProjectMode) { "Project-level" } else { "Global" })"
+        return
+    }
+
+    $inRepo = Test-GitRepository
+    $canPrompt = $false
+    try {
+        $canPrompt = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected
+    }
+    catch {
+        $canPrompt = $false
+    }
+
+    if ($canPrompt) {
+        Write-Host ""
+        Write-Info "Select installation mode:"
+
+        if ($inRepo) {
+            Write-Host "  1) Project-level (recommended)"
+            Write-Host "  2) Global"
+            $choice = Read-Host "Choose [1/2] (default: 1)"
+
+            if ($choice -eq "2") {
+                $script:ProjectMode = $false
+            }
+            else {
+                $script:ProjectMode = $true
+            }
+        }
+        else {
+            Write-Host "  1) Global (recommended, current directory is not a git repository)"
+            Write-Host "  2) Project-level (requires git repository)"
+            $choice = Read-Host "Choose [1/2] (default: 1)"
+
+            if ($choice -eq "2") {
+                throw "Project-level installation requires running inside a git repository."
+            }
+
+            $script:ProjectMode = $false
+        }
+    }
+    else {
+        if ($inRepo) {
+            $script:ProjectMode = $true
+            Write-Info "No mode flag provided; defaulting to project-level installation."
+        }
+        else {
+            $script:ProjectMode = $false
+            Write-Info "No mode flag provided; defaulting to global installation."
+        }
+    }
 }
 
 function Get-AgentInstallDir {
@@ -312,6 +373,7 @@ function Print-Usage {
 }
 
 Write-Info "Git Commit AI - Windows Installer"
+Select-InstallMode
 Write-Info "Mode: $(if ($ProjectMode) { "Project-level" } else { "Global" })"
 
 if ($ProjectMode -and -not (Test-GitRepository)) {
