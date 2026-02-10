@@ -514,11 +514,17 @@ if [ -x "$LEGACY_HOOK" ]; then
   "$LEGACY_HOOK" "$@"
 fi
 
-# Only modify for regular commits (not merge, squash, etc.)
-if [ -z "$COMMIT_SOURCE" ]; then
-  NODE_BIN="\${NODE_BIN:-node}"
-  "$NODE_BIN" "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
-fi
+# Modify for regular commits and -m/-F commits (not merge, squash, etc.)
+# COMMIT_SOURCE: empty=editor, message=-m/-F, merge=merge, squash=squash
+case "$COMMIT_SOURCE" in
+  ""|message)
+    NODE_BIN="\${NODE_BIN:-node}"
+    "$NODE_BIN" "${entryScript}" --hook-mode "$COMMIT_MSG_FILE"
+    ;;
+  *)
+    # Skip for merge, squash, template, etc.
+    ;;
+esac
 `;
 
   const commitMsgHookContent = `#!/bin/sh
