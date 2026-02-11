@@ -102,6 +102,31 @@ curl -fsSL https://raw.githubusercontent.com/rdealist/git-commit-ai/main/install
 - `[AI]` 标签存在时必须有 `AI-Info`
 - `AI-Info` 至少包含：`Agents / Sessions / Involvement / Depth`
 
+## 🧭 自定义会话路径（Windows / 项目内）
+
+当 AI 客户端把会话存储到默认目录之外时，可通过环境变量显式补充扫描路径：
+
+```bash
+# 单路径
+CODEX_SESSIONS_PATH="D:/agent-data/codex/sessions"
+
+# 多路径（Windows 用 ;，macOS/Linux 用 :）
+CODEX_SESSIONS_PATH="D:/agent-data/codex/sessions;${PROJECT_ROOT}/.codex/sessions"
+
+# 也支持 git-commit-ai 前缀变量
+GIT_COMMIT_AI_CODEX_SESSIONS_PATH="D:/agent-data/codex/sessions"
+```
+
+支持变量：
+
+- `CLAUDE_SESSIONS_PATH` / `GIT_COMMIT_AI_CLAUDE_SESSIONS_PATH`
+- `CODEX_SESSIONS_PATH` / `GIT_COMMIT_AI_CODEX_SESSIONS_PATH`
+- `KIMI_SESSIONS_PATH` / `GIT_COMMIT_AI_KIMI_SESSIONS_PATH`
+- `CURSOR_SESSIONS_PATH` / `GIT_COMMIT_AI_CURSOR_SESSIONS_PATH`
+- `AIDER_SESSIONS_PATH` / `GIT_COMMIT_AI_AIDER_SESSIONS_PATH`
+
+> 未命中真实会话文件时，工具会使用项目内 AI 痕迹（如 `.codex` / `AGENTS.md`）作为兜底信号，避免遗漏 `AI-Info`。
+
 ## ✨ 提交格式示例
 
 ```text

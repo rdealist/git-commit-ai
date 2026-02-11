@@ -41,7 +41,11 @@ function getHomeDir() {
 const HOME_DIR = getHomeDir();
 
 function normalizePath(input = '') {
-  return input.replace(/\\/g, '/').replace(/\/+$/, '');
+  return String(input || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/\/+$/, '');
 }
 
 function normalizePathForCompare(input = '') {
@@ -62,6 +66,210 @@ function isProjectPathMatch(candidatePath = '', projectPath = '') {
     project.startsWith(`${candidate}/`);
 }
 
+function isPathWithin(candidatePath = '', parentPath = '') {
+  const candidate = normalizePathForCompare(candidatePath);
+  const parent = normalizePathForCompare(parentPath);
+
+  if (!candidate || !parent) {
+    return false;
+  }
+
+  return candidate === parent || candidate.startsWith(`${parent}/`);
+}
+
+function splitEnvPaths(raw = '') {
+  const value = String(raw || '').trim();
+  if (!value) {
+    return [];
+  }
+
+  if (value.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(Boolean).map(item => String(item).trim()).filter(Boolean);
+      }
+    } catch {
+      // Fall back to delimiter parsing.
+    }
+  }
+
+  const delimiterPattern = path.delimiter === ';' ? /[;\n,]/ : /[:\n,]/;
+  return value
+    .split(delimiterPattern)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function getEnvPathList(keys = []) {
+  const result = [];
+
+  for (const key of keys) {
+    const raw = process.env[key];
+    if (!raw) {
+      continue;
+    }
+    result.push(...splitEnvPaths(raw));
+  }
+
+  return result;
+}
+
+function expandPathTokens(rawPath = '', projectRoot = '') {
+  if (!rawPath) {
+    return '';
+  }
+
+  let expanded = String(rawPath).trim();
+  if (!expanded) {
+    return '';
+  }
+
+  const home = HOME_DIR || '';
+  if (expanded.startsWith('~/') || expanded === '~') {
+    expanded = home ? path.join(home, expanded.slice(2)) : expanded;
+  }
+
+  const replacements = {
+    HOME: home,
+    USERPROFILE: process.env.USERPROFILE || home,
+    APPDATA: process.env.APPDATA || '',
+    LOCALAPPDATA: process.env.LOCALAPPDATA || '',
+    PROJECT_ROOT: projectRoot || '',
+    GIT_ROOT: projectRoot || '',
+  };
+
+  expanded = expanded
+    .replace(/\$\{(HOME|USERPROFILE|APPDATA|LOCALAPPDATA|PROJECT_ROOT|GIT_ROOT)\}/gi, (_, key) => replacements[key.toUpperCase()] || '')
+    .replace(/%((HOME|USERPROFILE|APPDATA|LOCALAPPDATA|PROJECT_ROOT|GIT_ROOT))%/gi, (_, key) => replacements[key.toUpperCase()] || '');
+
+  return expanded;
+}
+
+function resolveExistingPaths(paths = [], projectRoot = '') {
+  const resolved = [];
+
+  for (const candidate of paths) {
+    const expanded = expandPathTokens(candidate, projectRoot);
+    if (!expanded) {
+      continue;
+    }
+
+    const normalized = normalizePath(expanded);
+    if (!normalized) {
+      continue;
+    }
+
+    if (resolved.some(existing => normalizePathForCompare(existing) === normalizePathForCompare(normalized))) {
+      continue;
+    }
+
+    try {
+      if (fs.existsSync(normalized)) {
+        resolved.push(normalized);
+      }
+    } catch {
+      // Ignore invalid paths.
+    }
+  }
+
+  return resolved;
+}
+
+function getWindowsAgentPaths(agentId) {
+  const appData = process.env.APPDATA || '';
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const userProfile = process.env.USERPROFILE || '';
+
+  const roots = [userProfile, appData, localAppData].filter(Boolean);
+  const candidates = [];
+
+  if (agentId === 'codex') {
+    for (const root of roots) {
+      candidates.push(path.join(root, '.codex'));
+      candidates.push(path.join(root, '.codex', 'sessions'));
+      candidates.push(path.join(root, 'codex'));
+      candidates.push(path.join(root, 'codex', 'sessions'));
+      candidates.push(path.join(root, 'codex', 'logs'));
+    }
+  }
+
+  if (agentId === 'claude-code') {
+    for (const root of roots) {
+      candidates.push(path.join(root, '.claude'));
+      candidates.push(path.join(root, '.claude', 'projects'));
+      candidates.push(path.join(root, '.claude', 'sessions'));
+      candidates.push(path.join(root, 'claude', 'projects'));
+    }
+  }
+
+  if (agentId === 'kimi-cli') {
+    for (const root of roots) {
+      candidates.push(path.join(root, '.kimi'));
+      candidates.push(path.join(root, '.kimi', 'user-history'));
+      candidates.push(path.join(root, '.kimi', 'sessions'));
+      candidates.push(path.join(root, 'kimi', 'user-history'));
+    }
+  }
+
+  if (agentId === 'cursor') {
+    for (const root of roots) {
+      candidates.push(path.join(root, '.cursor'));
+      candidates.push(path.join(root, '.cursor', 'sessions'));
+      candidates.push(path.join(root, 'cursor', 'sessions'));
+    }
+  }
+
+  if (agentId === 'aider') {
+    for (const root of roots) {
+      candidates.push(path.join(root, '.aider'));
+      candidates.push(path.join(root, '.aider', 'chat-history'));
+      candidates.push(path.join(root, 'aider', 'chat-history'));
+    }
+  }
+
+  return candidates;
+}
+
+function textMentionsProject(text = '', projectPath = '') {
+  const normalizedText = normalizePathForCompare(text);
+  const normalizedProject = normalizePathForCompare(projectPath);
+
+  if (!normalizedText || !normalizedProject) {
+    return false;
+  }
+
+  return normalizedText.includes(normalizedProject);
+}
+
+function valueMentionsProject(value, projectPath = '', depth = 0) {
+  if (depth > 5 || value == null) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    return isProjectPathMatch(value, projectPath) || textMentionsProject(value, projectPath);
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(item => valueMentionsProject(item, projectPath, depth + 1));
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value).some(([key, nestedValue]) => {
+      if (typeof nestedValue === 'string' && /(path|cwd|dir|file|root|workspace)/i.test(key)) {
+        return valueMentionsProject(nestedValue, projectPath, depth + 1);
+      }
+      if (typeof nestedValue === 'object') {
+        return valueMentionsProject(nestedValue, projectPath, depth + 1);
+      }
+      return false;
+    });
+  }
+
+  return false;
+}
+
 /**
  * Get session directories from environment variables or defaults
  */
@@ -74,57 +282,59 @@ function getSessionSearchPaths(projectRoot) {
     'aider': [],
   };
 
-  // Environment variable overrides
-  if (process.env.CLAUDE_SESSIONS_PATH) {
-    paths['claude-code'].push(process.env.CLAUDE_SESSIONS_PATH);
-  }
-  if (process.env.CODEX_SESSIONS_PATH) {
-    paths['codex'].push(process.env.CODEX_SESSIONS_PATH);
-  }
-  if (process.env.KIMI_SESSIONS_PATH) {
-    paths['kimi-cli'].push(process.env.KIMI_SESSIONS_PATH);
-  }
-  if (process.env.CURSOR_SESSIONS_PATH) {
-    paths['cursor'].push(process.env.CURSOR_SESSIONS_PATH);
-  }
-  if (process.env.AIDER_SESSIONS_PATH) {
-    paths['aider'].push(process.env.AIDER_SESSIONS_PATH);
-  }
+  // Environment variable overrides (supports list values via path.delimiter/newline/comma).
+  paths['claude-code'].push(...getEnvPathList(['CLAUDE_SESSIONS_PATH', 'GIT_COMMIT_AI_CLAUDE_SESSIONS_PATH']));
+  paths['codex'].push(...getEnvPathList(['CODEX_SESSIONS_PATH', 'GIT_COMMIT_AI_CODEX_SESSIONS_PATH']));
+  paths['kimi-cli'].push(...getEnvPathList(['KIMI_SESSIONS_PATH', 'GIT_COMMIT_AI_KIMI_SESSIONS_PATH']));
+  paths['cursor'].push(...getEnvPathList(['CURSOR_SESSIONS_PATH', 'GIT_COMMIT_AI_CURSOR_SESSIONS_PATH']));
+  paths['aider'].push(...getEnvPathList(['AIDER_SESSIONS_PATH', 'GIT_COMMIT_AI_AIDER_SESSIONS_PATH']));
 
   // Default global paths
   if (HOME_DIR) {
     // Claude Code
     paths['claude-code'].push(
+      path.join(HOME_DIR, '.claude'),
       path.join(HOME_DIR, '.claude', 'projects'),
       path.join(HOME_DIR, '.claude', 'sessions')
     );
 
     // Codex
     paths['codex'].push(
+      path.join(HOME_DIR, '.codex'),
       path.join(HOME_DIR, '.codex', 'sessions'),
       path.join(HOME_DIR, '.codex', 'logs')
     );
 
     // Kimi
     paths['kimi-cli'].push(
+      path.join(HOME_DIR, '.kimi'),
       path.join(HOME_DIR, '.kimi', 'user-history'),
       path.join(HOME_DIR, '.kimi', 'sessions')
     );
 
     // Cursor
     paths['cursor'].push(
+      path.join(HOME_DIR, '.cursor'),
       path.join(HOME_DIR, '.cursor', 'sessions'),
       path.join(HOME_DIR, '.cursor', 'logs')
     );
 
     // Aider
     paths['aider'].push(
+      path.join(HOME_DIR, '.aider'),
       path.join(HOME_DIR, '.aider', 'sessions'),
       path.join(HOME_DIR, '.aider', 'chat-history')
     );
   }
 
-  // Project-local sessions (check these first!)
+  // Windows roaming/local profile paths (covers custom/default installers).
+  paths['claude-code'].push(...getWindowsAgentPaths('claude-code'));
+  paths['codex'].push(...getWindowsAgentPaths('codex'));
+  paths['kimi-cli'].push(...getWindowsAgentPaths('kimi-cli'));
+  paths['cursor'].push(...getWindowsAgentPaths('cursor'));
+  paths['aider'].push(...getWindowsAgentPaths('aider'));
+
+  // Project-local sessions (check these first)
   if (projectRoot) {
     paths['claude-code'].unshift(
       path.join(projectRoot, '.claude', 'sessions'),
@@ -150,14 +360,7 @@ function getSessionSearchPaths(projectRoot) {
 
   // Remove duplicates and non-existent paths
   for (const agent of Object.keys(paths)) {
-    const uniquePaths = [...new Set(paths[agent])];
-    paths[agent] = uniquePaths.filter(p => {
-      try {
-        return fs.existsSync(p);
-      } catch {
-        return false;
-      }
-    });
+    paths[agent] = resolveExistingPaths(paths[agent], projectRoot);
   }
 
   return paths;
@@ -203,6 +406,7 @@ function getChangedFiles(cwd = process.cwd()) {
  */
 function findAllJsonlFiles(searchPaths, sinceTimestamp = 0) {
   const results = [];
+  const seen = new Set();
   
   for (const dir of searchPaths) {
     if (!fs.existsSync(dir)) {
@@ -249,6 +453,13 @@ function findAllJsonlFiles(searchPaths, sinceTimestamp = 0) {
                 // If we can't stat the file, include it anyway
               }
             }
+
+            const key = normalizePathForCompare(fullPath);
+            if (seen.has(key)) {
+              continue;
+            }
+
+            seen.add(key);
             results.push(fullPath);
           }
         }
@@ -305,20 +516,13 @@ function parseClaudeSessions(projectPath, searchPaths, sinceTimestamp = 0) {
             sessionData.timestamp = entryTime;
           }
           
-          // Check if session belongs to this project via cwd
-          if (entry.cwd) {
-            const entryCwd = normalizePath(entry.cwd);
-            if (isProjectPathMatch(entryCwd, normalizedProjectPath)) {
-              fileBelongsToProject = true;
-            }
+          // Check if session belongs to this project via cwd/tool payloads.
+          if (entry.cwd && isProjectPathMatch(entry.cwd, normalizedProjectPath)) {
+            fileBelongsToProject = true;
           }
-          
-          // Also check file_path in tool inputs
-          if (entry.tool_input?.file_path || entry.tool_input?.path) {
-            const fileInProject = entry.tool_input.file_path || entry.tool_input.path;
-            if (fileInProject && isProjectPathMatch(fileInProject, normalizedProjectPath)) {
-              fileBelongsToProject = true;
-            }
+
+          if (valueMentionsProject(entry.tool_input, normalizedProjectPath)) {
+            fileBelongsToProject = true;
           }
           
           // Parse user messages (prompts)
@@ -332,6 +536,10 @@ function parseClaudeSessions(projectPath, searchPaths, sinceTimestamp = 0) {
                 timestamp: entry.timestamp,
                 content: content.substring(0, 500),
               });
+            }
+
+            if (textMentionsProject(content, normalizedProjectPath)) {
+              fileBelongsToProject = true;
             }
           }
           
@@ -378,8 +586,8 @@ function parseClaudeSessions(projectPath, searchPaths, sinceTimestamp = 0) {
       // 1. We confirmed it belongs to this project, OR
       // 2. It's in a project-local .claude directory, OR
       // 3. The file path contains the project name
-      const isProjectLocal = searchPaths.some(sp => 
-        filePath.startsWith(sp) && sp.includes(projectPath)
+      const isProjectLocal = searchPaths.some(sp =>
+        isProjectPathMatch(sp, normalizedProjectPath) && isPathWithin(filePath, sp)
       );
       const pathMatchesProject = filePath.toLowerCase().includes(
         path.basename(projectPath).toLowerCase()
@@ -426,6 +634,7 @@ function parseCodexSessions(projectPath, searchPaths, sinceTimestamp = 0) {
       };
 
       let sessionProject = '';
+      let hasProjectEvidence = false;
 
       for (const line of lines) {
         try {
@@ -434,6 +643,12 @@ function parseCodexSessions(projectPath, searchPaths, sinceTimestamp = 0) {
 
           if (entry.type === 'session_meta') {
             sessionProject = entry.payload?.cwd || '';
+            if (isProjectPathMatch(sessionProject, normalizedProjectPath)) {
+              hasProjectEvidence = true;
+            }
+            if (valueMentionsProject(entry.payload, normalizedProjectPath)) {
+              hasProjectEvidence = true;
+            }
           }
 
           if (sinceTimestamp && Number.isFinite(entryTime) && entryTime < sinceTimestamp) {
@@ -463,6 +678,10 @@ function parseCodexSessions(projectPath, searchPaths, sinceTimestamp = 0) {
                 timestamp: entry.timestamp,
                 content: userText.substring(0, 500),
               });
+
+              if (textMentionsProject(userText, normalizedProjectPath)) {
+                hasProjectEvidence = true;
+              }
 
               const skillMatch = userText.match(/\/skill[:\s]+(\S+)/);
               if (skillMatch) {
@@ -494,6 +713,10 @@ function parseCodexSessions(projectPath, searchPaths, sinceTimestamp = 0) {
               input: args,
             });
 
+            if (valueMentionsProject(args, normalizedProjectPath)) {
+              hasProjectEvidence = true;
+            }
+
             const toolName = payload.name || '';
             if (toolName.includes('skill') || toolName === 'update_plan') {
               sessionData.hasWorkflow = true;
@@ -515,12 +738,12 @@ function parseCodexSessions(projectPath, searchPaths, sinceTimestamp = 0) {
         }
       }
 
-      // Flexible matching: check session metadata or file location
-      const isProjectLocal = searchPaths.some(sp => 
-        filePath.startsWith(sp) && sp.includes(projectPath)
+      // Flexible matching: check metadata, payload evidence, or local file location.
+      const isProjectLocal = searchPaths.some(sp =>
+        isProjectPathMatch(sp, normalizedProjectPath) && isPathWithin(filePath, sp)
       );
       
-      if (isProjectPathMatch(sessionProject, normalizedProjectPath) || isProjectLocal) {
+      if (hasProjectEvidence || isProjectPathMatch(sessionProject, normalizedProjectPath) || isProjectLocal) {
         if (sessionData.prompts.length > 0 || sessionData.tools.length > 0) {
           sessionData.skills = [...new Set(sessionData.skills)];
           sessions.push(sessionData);
@@ -550,7 +773,7 @@ function parseKimiSessions(projectPath, searchPaths, sinceTimestamp = 0) {
       const kimiConfig = JSON.parse(fs.readFileSync(kimiJsonPath, 'utf-8'));
       workDirPaths = (kimiConfig.work_dirs || [])
         .filter(w => w.path && isProjectPathMatch(w.path, normalizedProjectPath))
-        .map(w => w.path);
+        .map(w => normalizePath(w.path));
     } catch {
       // Config read error, continue with file-based detection
     }
@@ -583,10 +806,14 @@ function parseKimiSessions(projectPath, searchPaths, sinceTimestamp = 0) {
           
           // Check for project path references in content
           if (entry.content && typeof entry.content === 'string') {
-            if (entry.content.includes(normalizedProjectPath) ||
-                workDirPaths.some(wp => entry.content.includes(wp))) {
+            if (textMentionsProject(entry.content, normalizedProjectPath) ||
+                workDirPaths.some(wp => textMentionsProject(entry.content, wp))) {
               hasProjectContent = true;
             }
+          }
+
+          if (entry.cwd && isProjectPathMatch(entry.cwd, normalizedProjectPath)) {
+            hasProjectContent = true;
           }
           
           if (entry.content && entry.content.length > 10) {
@@ -610,8 +837,8 @@ function parseKimiSessions(projectPath, searchPaths, sinceTimestamp = 0) {
       }
       
       // Include if: config matched, project-local, or content referenced project
-      const isProjectLocal = searchPaths.some(sp => 
-        filePath.startsWith(sp) && sp.includes(projectPath)
+      const isProjectLocal = searchPaths.some(sp =>
+        isProjectPathMatch(sp, normalizedProjectPath) && isPathWithin(filePath, sp)
       );
       
       if (workDirPaths.length > 0 || isProjectLocal || hasProjectContent) {
@@ -660,8 +887,22 @@ function detectAIUsageFromIndicators(projectPath) {
   if (process.env.KIMI_CLI) {
     indicators.push('kimi-cli-env');
   }
+
+  const sessionPathEnvMap = {
+    'claude-code': ['CLAUDE_SESSIONS_PATH', 'GIT_COMMIT_AI_CLAUDE_SESSIONS_PATH'],
+    codex: ['CODEX_SESSIONS_PATH', 'GIT_COMMIT_AI_CODEX_SESSIONS_PATH'],
+    'kimi-cli': ['KIMI_SESSIONS_PATH', 'GIT_COMMIT_AI_KIMI_SESSIONS_PATH'],
+    cursor: ['CURSOR_SESSIONS_PATH', 'GIT_COMMIT_AI_CURSOR_SESSIONS_PATH'],
+    aider: ['AIDER_SESSIONS_PATH', 'GIT_COMMIT_AI_AIDER_SESSIONS_PATH'],
+  };
+
+  for (const [agent, keys] of Object.entries(sessionPathEnvMap)) {
+    if (keys.some(key => Boolean(process.env[key]))) {
+      indicators.push(`${agent}-sessions-env`);
+    }
+  }
   
-  return indicators;
+  return [...new Set(indicators)];
 }
 
 /**
