@@ -740,17 +740,37 @@ async function interactiveMode(options, aiData) {
  */
 function hookMode(commitMsgFile) {
   const originalMsg = fs.readFileSync(commitMsgFile, 'utf-8');
-  
-  // Skip if message already has AI-Info or starts with emoji
-  if (originalMsg.includes('AI-Info:') || originalMsg.match(/^[✨🐛📚💎♻️⚡🧪🔧🔨📦⏪🚧🤖]/u)) {
+
+  const { clean, header, body } = splitCommitMessage(originalMsg);
+
+  // Skip empty messages and messages already containing metadata.
+  if (!clean || clean.includes('AI-Info:')) {
+    return;
+  }
+
+  const gitInfo = getGitInfo();
+  let aiData;
+
+  try {
+    aiData = analyzeAIUsage(gitInfo?.root);
+  } catch {
     return;
   }
   
-  const gitInfo = getGitInfo();
-  const aiData = analyzeAIUsage(gitInfo?.root);
-  
   // Only enhance if AI was used
   if (!aiData.aiUsed) {
+    return;
+  }
+
+  const aiFooter = generateAIMetadata(aiData);
+  if (!aiFooter) {
+    return;
+  }
+
+  // Keep user-written conventional headers, only append AI metadata.
+  if (COMMIT_HEADER_REGEX.test(header)) {
+    const preservedMessage = body ? `${header}\n\n${body}` : header;
+    fs.writeFileSync(commitMsgFile, `${preservedMessage}\n\n${aiFooter}`);
     return;
   }
   
@@ -762,20 +782,16 @@ function hookMode(commitMsgFile) {
   
   // Build new header with [AI] tag and Chinese description
   // Extract original message (remove leading emoji if present)
-  let originalText = originalMsg.trim();
-  if (originalText.match(/^[\p{Emoji}]\s*/u)) {
-    originalText = originalText.replace(/^[\p{Emoji}]\s*/, '');
+  let originalText = header;
+  if (originalText.match(/^[\p{Emoji}\u200D\uFE0F]+\s*/u)) {
+    originalText = originalText.replace(/^[\p{Emoji}\u200D\uFE0F]+\s*/u, '');
   }
   
   // Format: ✨ [AI] feat: 新功能 - original message
   const newHeader = `${emoji} [AI] ${type}: ${typeChinese} - ${originalText}`;
   
-  // Add AI metadata footer
-  const aiFooter = generateAIMetadata(aiData);
-  let newMsg = newHeader;
-  if (aiFooter) {
-    newMsg = `${newHeader}\n\n${aiFooter}`;
-  }
+  const messageBody = body ? `\n\n${body}` : '';
+  const newMsg = `${newHeader}${messageBody}\n\n${aiFooter}`;
   
   fs.writeFileSync(commitMsgFile, newMsg);
 }
