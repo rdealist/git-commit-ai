@@ -21,7 +21,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const crypto = require('node:crypto');
 const { analyzeAIUsage } = require('./analyze-agent-sessions.cjs');
 
 // Emoji mapping for commit types (GitMoji + Angular hybrid)
@@ -258,20 +257,6 @@ function inferScope(files) {
 }
 
 /**
- * Generate hash from prompt for anti-fraud
- */
-function generatePromptHash(prompt) {
-	if (!prompt || prompt.length < 5) return '';
-
-	// Use first 100 chars of prompt to generate hash
-	const data = prompt.substring(0, 100).trim();
-	const hash = crypto.createHash('sha256').update(data).digest('hex');
-
-	// Return first 12 chars of hash (readable but unique enough)
-	return hash.substring(0, 12);
-}
-
-/**
  * Generate AI metadata footer
  */
 function generateAIMetadata(aiData, options = {}) {
@@ -286,16 +271,9 @@ function generateAIMetadata(aiData, options = {}) {
 	lines.push('AI-Info:');
 	lines.push(`  Agents: ${aiData.agents.join(', ') || 'none'}`);
 	lines.push(`  Sessions: ${aiData.sessionCount}`);
+	lines.push(`  Turns: ${aiData.turnCount || 0}`);
 	lines.push(`  Involvement: ${aiData.aiInvolvement}%`);
 	lines.push(`  Depth: ${level.label} ${level.emoji}`);
-
-	// Anti-fraud hash from prompt
-	if (aiData.promptSummary && aiData.promptSummary.length > 10) {
-		const hash = generatePromptHash(aiData.promptSummary);
-		if (hash) {
-			lines.push(`  Hash: ${hash}`);
-		}
-	}
 
 	// Features used
 	if (aiData.usageDepth) {
@@ -312,12 +290,6 @@ function generateAIMetadata(aiData, options = {}) {
 		if (aiData.usageDepth.skillNames?.length > 0) {
 			lines.push(`  Skills: ${aiData.usageDepth.skillNames.join(', ')}`);
 		}
-	}
-
-	// Prompt summary (if available and not too long)
-	if (aiData.promptSummary && aiData.promptSummary.length > 10) {
-		const summary = aiData.promptSummary.replace(/\n/g, ' ').substring(0, 100);
-		lines.push(`  Prompt: "${summary}${aiData.promptSummary.length > 100 ? '...' : ''}"`);
 	}
 
 	return lines.join('\n');
@@ -666,6 +638,7 @@ async function interactiveMode(options, aiData) {
 		console.log(`📊 Detected AI usage:`);
 		console.log(`   Agents: ${aiData.agents.join(', ')}`);
 		console.log(`   Sessions: ${aiData.sessionCount}`);
+		console.log(`   Turns: ${aiData.turnCount || 0}`);
 		console.log(`   Involvement: ${aiData.aiInvolvement}%`);
 		console.log('');
 	}

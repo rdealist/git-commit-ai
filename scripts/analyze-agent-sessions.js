@@ -959,25 +959,16 @@ function calculateAIInvolvement(changedFiles, sessions, projectPath) {
 }
 
 /**
- * Generate prompt summaries from sessions
+ * Count total conversation turns across sessions
+ * A "turn" is a user message that expects a response
  */
-function generatePromptSummaries(sessions, maxLength = 200) {
-  const allPrompts = sessions.flatMap(s => s.prompts.map(p => p.content));
-  
-  if (allPrompts.length === 0) {
-    return '';
+function countConversationTurns(sessions) {
+  let totalTurns = 0;
+  for (const session of sessions) {
+    // Count prompts as turns (user messages)
+    totalTurns += session.prompts?.length || 0;
   }
-  
-  const recentPrompts = allPrompts
-    .filter(p => p.length > 20)
-    .slice(-3);
-  
-  if (recentPrompts.length === 0) {
-    return '';
-  }
-  
-  const summary = recentPrompts.join('; ').substring(0, maxLength);
-  return summary + (summary.length >= maxLength ? '...' : '');
+  return totalTurns;
 }
 
 /**
@@ -1077,9 +1068,9 @@ function analyzeAIUsage(projectPath = process.cwd()) {
   
   // Calculate metrics
   const aiInvolvement = calculateAIInvolvement(changedFiles, allSessions, gitRoot);
-  const promptSummary = generatePromptSummaries(allSessions);
+  const turnCount = countConversationTurns(allSessions);
   const usageDepth = analyzeUsageDepth(allSessions);
-  
+
   // Generate result
   const result = {
     timestamp: new Date().toISOString(),
@@ -1090,7 +1081,7 @@ function analyzeAIUsage(projectPath = process.cwd()) {
     aiInvolvement: allSessions.length > 0 ? aiInvolvement : (fallbackIndicators.length > 0 ? 50 : 0),
     changedFiles: changedFiles.length,
     sessionCount: allSessions.length,
-    promptSummary,
+    turnCount,
     usageDepth,
     sessions: allSessions.map(s => ({
       id: s.id,
@@ -1118,7 +1109,7 @@ module.exports = {
   parseCodexSessions,
   parseKimiSessions,
   calculateAIInvolvement,
-  generatePromptSummaries,
+  countConversationTurns,
   analyzeUsageDepth,
   getSessionSearchPaths,
 };
